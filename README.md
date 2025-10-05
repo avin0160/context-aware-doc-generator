@@ -99,6 +99,38 @@ python main.py https://github.com/username/repository --repo --output docs
 python main.py https://github.com/username/repo --repo --branch develop --style numpy
 ```
 
+## 🔄 GitHub Updates
+
+The project includes several convenient methods to keep your GitHub repository updated:
+
+### Method 1: Quick Update Script
+```bash
+# Update with custom message
+./update_github.sh "Add new feature implementation"
+
+# Update with default timestamp message
+./update_github.sh
+```
+
+### Method 2: Setup Git Hooks (Optional)
+```bash
+# Setup automatic hooks
+./setup_git_hooks.sh
+
+# Enable auto-push after every commit
+export AUTO_PUSH=true
+git add .
+git commit -m "Your changes"
+# Automatically pushes to GitHub
+```
+
+### Method 3: Manual Updates (Traditional)
+```bash
+git add .
+git commit -m "Your commit message"
+git push origin main
+```
+
 ### API Usage
 
 ```python
