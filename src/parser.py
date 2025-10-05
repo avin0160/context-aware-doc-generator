@@ -60,19 +60,19 @@ class MultiLanguageParser:
                 try:
                     if lang_name == 'python':
                         import tree_sitter_python as tsp
-                        language = Language(tsp.language(), lang_name)
+                        language = Language(tsp.language())
                     elif lang_name == 'javascript':
                         import tree_sitter_javascript as tsjs
-                        language = Language(tsjs.language(), lang_name)
+                        language = Language(tsjs.language())
                     elif lang_name == 'java':
                         import tree_sitter_java as tsj
-                        language = Language(tsj.language(), lang_name)
+                        language = Language(tsj.language())
                     elif lang_name == 'go':
                         import tree_sitter_go as tsg
-                        language = Language(tsg.language(), lang_name)
+                        language = Language(tsg.language())
                     elif lang_name == 'cpp':
                         import tree_sitter_cpp as tscpp
-                        language = Language(tscpp.language(), lang_name)
+                        language = Language(tscpp.language())
                     
                     parser = Parser()
                     parser.set_language(language)

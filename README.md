@@ -54,12 +54,20 @@ pip install -r requirements.txt
 ### For Google Colab
 
 ```python
-# Upload the entire project folder to Colab
-# Then run:
-!pip install -r requirements.txt
+# Method 1: Upload the project folder to Colab
+# 1. Download/clone the project
+# 2. Upload the entire folder to Colab
+# 3. Open notebooks/colab_setup.ipynb and run all cells
 
-# Run the main script
-!python main.py --help
+# Method 2: Clone directly in Colab
+!git clone https://github.com/avin0160/context-aware-doc-generator.git
+%cd context-aware-doc-generator
+
+# Then run the setup
+!python setup_colab.py
+
+# Or use the step-by-step notebook
+# Open notebooks/colab_setup.ipynb
 ```
 
 ## 🎯 Usage
