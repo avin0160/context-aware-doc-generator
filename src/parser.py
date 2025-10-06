@@ -295,16 +295,49 @@ class MultiLanguageParser:
     def _get_node_name(self, node, content: str) -> str:
         """Get the name of a function or class node."""
         try:
-            # Look for identifier nodes in children
+            # For Python: function_def and class_definition have direct identifier children
+            # For JavaScript: function_declaration and class_declaration have direct identifier children
+            
+            # Look for direct identifier children first
             for child in node.children:
                 if child.type == 'identifier':
-                    return content[child.start_byte:child.end_byte]
-                # Recursively search in children
-                name = self._get_node_name(child, content)
-                if name:
-                    return name
+                    name = content[child.start_byte:child.end_byte].strip()
+                    if name and name != 'unknown':
+                        return name
+            
+            # Alternative: look for specific patterns
+            if node.type in ['function_def', 'function_declaration']:
+                # Try to find the second child (usually the name after 'def' or 'function')
+                if len(node.children) > 1 and node.children[1].type == 'identifier':
+                    name = content[node.children[1].start_byte:node.children[1].end_byte].strip()
+                    if name:
+                        return name
+            
+            elif node.type in ['class_definition', 'class_declaration']:
+                # Try to find the second child (usually the name after 'class')
+                if len(node.children) > 1 and node.children[1].type == 'identifier':
+                    name = content[node.children[1].start_byte:node.children[1].end_byte].strip()
+                    if name:
+                        return name
+            
+            # Last resort: extract from node text and try to parse
+            node_text = content[node.start_byte:node.end_byte]
+            if node.type in ['function_def', 'function_declaration']:
+                # Try to extract function name with regex
+                import re
+                match = re.search(r'(?:def|function)\s+([a-zA-Z_][a-zA-Z0-9_]*)', node_text)
+                if match:
+                    return match.group(1)
+            elif node.type in ['class_definition', 'class_declaration']:
+                # Try to extract class name with regex
+                import re
+                match = re.search(r'class\s+([a-zA-Z_][a-zA-Z0-9_]*)', node_text)
+                if match:
+                    return match.group(1)
+            
             return "unknown"
-        except:
+        except Exception as e:
+            logger.debug(f"Error getting node name: {e}")
             return "unknown"
     
     def parse_codebase(self, directory_path: str) -> Dict[str, Any]:

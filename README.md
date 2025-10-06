@@ -102,13 +102,16 @@ python main.py https://github.com/username/repo --repo --branch develop --style 
 ### Terminal Demo (Perfect for Colab)
 
 ```bash
-# Quick system test
-python quick_test.py
+# Final comprehensive system test
+python final_test.py
 
 # Complete functionality demonstration
 python terminal_demo.py
 
-# Alternative: Individual component testing
+# Enhanced test with real code files
+python enhanced_test.py
+
+# Individual component testing
 python -c "from src.parser import create_parser; print('✅ Parser working!')"
 python -c "from src.rag import create_rag_system; print('✅ RAG system working!')"
 ```
