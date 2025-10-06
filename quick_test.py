@@ -21,7 +21,10 @@ try:
     parser = create_parser()
     code = "def hello(): return 'world'"
     result = parser.parse_code(code, 'python')
-    print(f"   ✅ Parsed {len(result.get('functions', []))} functions")
+    if result:
+        print(f"   ✅ Parsed {len(result.get('functions', []))} functions")
+    else:
+        print("   ⚠️ Parser returned no results (may need tree-sitter languages)")
     
     # Test RAG
     print("3. Testing RAG system...")

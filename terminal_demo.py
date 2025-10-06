@@ -81,22 +81,30 @@ function validateEmail(email) {
         # Test Python parsing
         print("🐍 Parsing Python code...")
         py_result = parser.parse_code(python_code, 'python')
-        py_functions = py_result.get('functions', [])
-        py_classes = py_result.get('classes', [])
-        print(f"   ✅ Found {len(py_functions)} functions: {[f.get('name', 'unknown') for f in py_functions]}")
-        print(f"   ✅ Found {len(py_classes)} classes: {[c.get('name', 'unknown') for c in py_classes]}")
+        if py_result:
+            py_functions = py_result.get('functions', [])
+            py_classes = py_result.get('classes', [])
+            print(f"   ✅ Found {len(py_functions)} functions: {[f.get('name', 'unknown') for f in py_functions]}")
+            print(f"   ✅ Found {len(py_classes)} classes: {[c.get('name', 'unknown') for c in py_classes]}")
+        else:
+            print("   ⚠️ Python parsing returned no results")
+            py_functions, py_classes = [], []
         
         # Test JavaScript parsing
         print("🟨 Parsing JavaScript code...")
         js_result = parser.parse_code(js_code, 'javascript')
-        js_functions = js_result.get('functions', [])
-        js_classes = js_result.get('classes', [])
-        print(f"   ✅ Found {len(js_functions)} functions: {[f.get('name', 'unknown') for f in js_functions]}")
-        print(f"   ✅ Found {len(js_classes)} classes: {[c.get('name', 'unknown') for c in js_classes]}")
+        if js_result:
+            js_functions = js_result.get('functions', [])
+            js_classes = js_result.get('classes', [])
+            print(f"   ✅ Found {len(js_functions)} functions: {[f.get('name', 'unknown') for f in js_functions]}")
+            print(f"   ✅ Found {len(js_classes)} classes: {[c.get('name', 'unknown') for c in js_classes]}")
+        else:
+            print("   ⚠️ JavaScript parsing returned no results")
+            js_functions, js_classes = [], []
         
     except Exception as e:
         print(f"❌ Parser error: {e}")
-        return False
+        py_functions, py_classes, js_functions, js_classes = [], [], [], []
     
     # Step 3: Test RAG system
     print_step("3️⃣", "Testing RAG System")

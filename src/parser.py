@@ -53,7 +53,7 @@ class MultiLanguageParser:
     def _setup_parsers(self):
         """Initialize parsers for all supported languages."""
         try:
-            from tree_sitter import Language
+            from tree_sitter import Language, Parser
             
             # Try to import language bindings
             for lang_name, config in self.SUPPORTED_LANGUAGES.items():
@@ -74,8 +74,7 @@ class MultiLanguageParser:
                         import tree_sitter_cpp as tscpp
                         language = Language(tscpp.language())
                     
-                    parser = Parser()
-                    parser.set_language(language)
+                    parser = Parser(language)
                     
                     self.languages[lang_name] = language
                     self.parsers[lang_name] = parser
@@ -83,6 +82,8 @@ class MultiLanguageParser:
                     
                 except ImportError as e:
                     logger.warning(f"Could not import {lang_name} parser: {e}")
+                except Exception as e:
+                    logger.warning(f"Could not setup {lang_name} parser: {e}")
                     
         except Exception as e:
             logger.error(f"Error setting up parsers: {e}")
@@ -96,6 +97,30 @@ class MultiLanguageParser:
                 return lang_name
         
         return None
+    
+    def parse_code(self, code: str, language: str) -> Optional[Dict[str, Any]]:
+        """Parse code string directly."""
+        try:
+            if language not in self.parsers:
+                logger.warning(f"Unsupported language: {language}")
+                return None
+            
+            parser = self.parsers[language]
+            tree = parser.parse(bytes(code, 'utf8'))
+            
+            return {
+                'language': language,
+                'content': code,
+                'tree': tree,
+                'functions': self._extract_functions(tree, code, language),
+                'classes': self._extract_classes(tree, code, language),
+                'imports': self._extract_imports(tree, code, language),
+                'comments': self._extract_comments(tree, code, language)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error parsing code: {e}")
+            return None
     
     def parse_file(self, file_path: str) -> Optional[Dict[str, Any]]:
         """Parse a single file and extract structure."""
