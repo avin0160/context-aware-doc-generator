@@ -69,21 +69,38 @@ class Phi3DocumentationGenerator:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
                 self.config.pad_token_id = self.tokenizer.eos_token_id
             
-            # Configure quantization for efficient inference
-            quantization_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.float16,
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_quant_type="nf4"
-            )
+            # Configure quantization for efficient inference (skip if disabled for Colab)
+            quantization_config = None
+            if not os.getenv('DISABLE_QUANTIZATION', '0') == '1':
+                try:
+                    quantization_config = BitsAndBytesConfig(
+                        load_in_4bit=True,
+                        bnb_4bit_compute_dtype=torch.float16,
+                        bnb_4bit_use_double_quant=True,
+                        bnb_4bit_quant_type="nf4"
+                    )
+                    logger.info("Quantization enabled")
+                except Exception as e:
+                    logger.warning(f"Quantization not available, using standard loading: {e}")
+                    quantization_config = None
+            else:
+                logger.info("Quantization disabled for Colab compatibility")
             
             logger.info(f"Loading model {self.model_name}")
+            
+            # Load model with or without quantization
+            load_kwargs = {
+                "device_map": "auto",
+                "trust_remote_code": True,
+                "torch_dtype": torch.float16
+            }
+            
+            if quantization_config is not None:
+                load_kwargs["quantization_config"] = quantization_config
+            
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_name,
-                quantization_config=quantization_config,
-                device_map="auto",
-                trust_remote_code=True,
-                torch_dtype=torch.float16
+                **load_kwargs
             )
             
             logger.info(f"Model loaded successfully on {self.device}")
