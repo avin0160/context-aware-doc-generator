@@ -102,6 +102,17 @@ class CodeRAGSystem:
                     
             except Exception as e:
                 logger.error(f"Error processing file {file_path}: {e}")
+                # Add minimal chunk even if processing fails
+                chunks.append({
+                    'type': 'file',
+                    'content': f"File: {file_path}",
+                    'metadata': {
+                        'file_path': file_path,
+                        'language': 'unknown',
+                        'functions_count': 0,
+                        'classes_count': 0
+                    }
+                })
                 continue
         
         return chunks
@@ -109,13 +120,13 @@ class CodeRAGSystem:
     def _create_file_summary(self, file_data: Dict[str, Any]) -> str:
         """Create a summary of the file for embedding."""
         summary_parts = [
-            f"File: {Path(file_data['file_path']).name}",
-            f"Language: {file_data['language']}",
-            f"Functions: {len(file_data['functions'])}",
-            f"Classes: {len(file_data['classes'])}"
+            f"File: {Path(file_data.get('file_path', 'unknown')).name}",
+            f"Language: {file_data.get('language', 'unknown')}",
+            f"Functions: {len(file_data.get('functions', []))}",
+            f"Classes: {len(file_data.get('classes', []))}"
         ]
         
-        if file_data['imports']:
+        if file_data.get('imports'):
             summary_parts.append(f"Imports: {', '.join(file_data['imports'][:5])}")
         
         # Add function names
@@ -188,6 +199,7 @@ class CodeRAGSystem:
             
             if not texts:
                 logger.warning("No code chunks to index")
+                self.is_trained = True  # Mark as trained even with empty index
                 return
             
             logger.info(f"Encoding {len(texts)} code chunks...")
@@ -225,6 +237,10 @@ class CodeRAGSystem:
         """
         if not self.is_trained:
             raise ValueError("Index not built. Call build_index() first.")
+        
+        if not self.code_chunks or not self.index:
+            logger.warning("No code chunks in index")
+            return []
         
         try:
             # Encode query

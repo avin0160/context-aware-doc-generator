@@ -112,16 +112,26 @@ function validateEmail(email) {
         rag_system = create_rag_system()
         print("✅ RAG system initialized")
         
-        # Create mock codebase
+        # Create mock codebase that matches parser output structure
         mock_codebase = {
             'files': {
                 'test.py': {
+                    'file_path': 'test.py',
+                    'language': 'python',
                     'functions': [
                         {'name': 'fibonacci', 'text': 'def fibonacci(n): return n if n <= 1 else fibonacci(n-1) + fibonacci(n-2)'},
                         {'name': 'factorial', 'text': 'def factorial(n): return 1 if n <= 1 else n * factorial(n-1)'}
                     ],
-                    'classes': []
+                    'classes': [],
+                    'imports': [],
+                    'comments': []
                 }
+            },
+            'summary': {
+                'total_files': 1,
+                'languages': ['python'],
+                'total_functions': 2,
+                'total_classes': 0
             }
         }
         
