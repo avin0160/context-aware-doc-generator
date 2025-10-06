@@ -99,6 +99,20 @@ python main.py https://github.com/username/repository --repo --output docs
 python main.py https://github.com/username/repo --repo --branch develop --style numpy
 ```
 
+### Terminal Demo (Perfect for Colab)
+
+```bash
+# Quick system test
+python quick_test.py
+
+# Complete functionality demonstration
+python terminal_demo.py
+
+# Alternative: Individual component testing
+python -c "from src.parser import create_parser; print('✅ Parser working!')"
+python -c "from src.rag import create_rag_system; print('✅ RAG system working!')"
+```
+
 ## 🔄 GitHub Updates
 
 The project includes several convenient methods to keep your GitHub repository updated:
