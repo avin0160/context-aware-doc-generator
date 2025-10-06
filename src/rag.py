@@ -55,29 +55,29 @@ class CodeRAGSystem:
         """
         chunks = []
         
-        for file_path, file_data in parsed_codebase['files'].items():
+        for file_path, file_data in parsed_codebase.get('files', {}).items():
             try:
                 # Add file-level chunk
                 file_chunk = {
                     'type': 'file',
                     'content': self._create_file_summary(file_data),
                     'metadata': {
-                        'file_path': file_path,
-                        'language': file_data['language'],
-                        'functions_count': len(file_data['functions']),
-                        'classes_count': len(file_data['classes'])
+                        'file_path': file_data.get('file_path', file_path),
+                        'language': file_data.get('language', 'unknown'),
+                        'functions_count': len(file_data.get('functions', [])),
+                        'classes_count': len(file_data.get('classes', []))
                     }
                 }
                 chunks.append(file_chunk)
                 
                 # Add function chunks
-                for func in file_data['functions']:
+                for func in file_data.get('functions', []):
                     func_chunk = {
                         'type': 'function',
                         'content': self._create_function_context(func, file_data),
                         'metadata': {
-                            'file_path': file_path,
-                            'language': file_data['language'],
+                            'file_path': file_data.get('file_path', file_path),
+                            'language': file_data.get('language', 'unknown'),
                             'name': func.get('name', 'unknown'),
                             'start_line': func.get('start_line', 0),
                             'end_line': func.get('end_line', 0)
@@ -86,13 +86,13 @@ class CodeRAGSystem:
                     chunks.append(func_chunk)
                 
                 # Add class chunks
-                for cls in file_data['classes']:
+                for cls in file_data.get('classes', []):
                     class_chunk = {
                         'type': 'class',
                         'content': self._create_class_context(cls, file_data),
                         'metadata': {
-                            'file_path': file_path,
-                            'language': file_data['language'],
+                            'file_path': file_data.get('file_path', file_path),
+                            'language': file_data.get('language', 'unknown'),
                             'name': cls.get('name', 'unknown'),
                             'start_line': cls.get('start_line', 0),
                             'end_line': cls.get('end_line', 0)
@@ -119,12 +119,12 @@ class CodeRAGSystem:
             summary_parts.append(f"Imports: {', '.join(file_data['imports'][:5])}")
         
         # Add function names
-        func_names = [f.get('name', 'unknown') for f in file_data['functions'][:10]]
+        func_names = [f.get('name', 'unknown') for f in file_data.get('functions', [])[:10]]
         if func_names:
             summary_parts.append(f"Function names: {', '.join(func_names)}")
         
         # Add class names
-        class_names = [c.get('name', 'unknown') for c in file_data['classes'][:10]]
+        class_names = [c.get('name', 'unknown') for c in file_data.get('classes', [])[:10]]
         if class_names:
             summary_parts.append(f"Class names: {', '.join(class_names)}")
         
@@ -134,8 +134,8 @@ class CodeRAGSystem:
         """Create contextual description of a function for embedding."""
         context_parts = [
             f"Function: {func.get('name', 'unknown')}",
-            f"Language: {file_data['language']}",
-            f"File: {Path(file_data['file_path']).name}"
+            f"Language: {file_data.get('language', 'unknown')}",
+            f"File: {Path(file_data.get('file_path', 'unknown')).name}"
         ]
         
         # Add the actual function code (truncated if too long)
@@ -146,7 +146,7 @@ class CodeRAGSystem:
         context_parts.append(f"Code:\n{func_code}")
         
         # Add surrounding context (imports, nearby functions)
-        if file_data['imports']:
+        if file_data.get('imports'):
             context_parts.append(f"File imports: {', '.join(file_data['imports'][:3])}")
         
         return "\n".join(context_parts)
@@ -155,8 +155,8 @@ class CodeRAGSystem:
         """Create contextual description of a class for embedding."""
         context_parts = [
             f"Class: {cls.get('name', 'unknown')}",
-            f"Language: {file_data['language']}",
-            f"File: {Path(file_data['file_path']).name}"
+            f"Language: {file_data.get('language', 'unknown')}",
+            f"File: {Path(file_data.get('file_path', 'unknown')).name}"
         ]
         
         # Add the actual class code (truncated if too long)
@@ -181,13 +181,21 @@ class CodeRAGSystem:
         """
         try:
             self.code_chunks = code_chunks
-            self.chunk_metadata = [chunk['metadata'] for chunk in code_chunks]
+            self.chunk_metadata = [chunk.get('metadata', {}) for chunk in code_chunks]
             
             # Extract content for embedding
-            texts = [chunk['content'] for chunk in code_chunks]
+            texts = [chunk.get('content', '') for chunk in code_chunks]
+            
+            if not texts:
+                logger.warning("No code chunks to index")
+                return
             
             logger.info(f"Encoding {len(texts)} code chunks...")
             embeddings = self.encoder.encode(texts, show_progress_bar=True)
+            
+            if embeddings.size == 0:
+                logger.warning("No embeddings generated")
+                return
             
             # Create FAISS index
             dimension = embeddings.shape[1]

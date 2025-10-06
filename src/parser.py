@@ -155,26 +155,30 @@ class MultiLanguageParser:
         """Extract function definitions from the syntax tree."""
         functions = []
         
-        query_patterns = {
-            'python': '(function_def name: (identifier) @name) @function',
-            'javascript': '(function_declaration name: (identifier) @name) @function',
-            'java': '(method_declaration name: (identifier) @name) @function',
-            'go': '(function_declaration name: (identifier) @name) @function',
-            'cpp': '(function_definition declarator: (function_declarator declarator: (identifier) @name)) @function'
+        # Simple node type matching for different languages
+        function_types = {
+            'python': ['function_def'],
+            'javascript': ['function_declaration', 'function_expression'],
+            'java': ['method_declaration'],
+            'go': ['function_declaration'],
+            'cpp': ['function_definition']
         }
         
-        if language not in query_patterns:
+        if language not in function_types:
             return functions
         
         try:
-            query = self.languages[language].query(query_patterns[language])
-            captures = query.captures(tree.root_node)
-            
-            for node, capture_name in captures:
-                if capture_name == 'function':
+            # Walk the tree and find function nodes
+            def walk_tree(node):
+                if node.type in function_types[language]:
                     func_info = self._extract_node_info(node, content)
                     if func_info:
                         functions.append(func_info)
+                
+                for child in node.children:
+                    walk_tree(child)
+            
+            walk_tree(tree.root_node)
                         
         except Exception as e:
             logger.error(f"Error extracting functions for {language}: {e}")
@@ -185,26 +189,30 @@ class MultiLanguageParser:
         """Extract class definitions from the syntax tree."""
         classes = []
         
-        query_patterns = {
-            'python': '(class_definition name: (identifier) @name) @class',
-            'javascript': '(class_declaration name: (identifier) @name) @class',
-            'java': '(class_declaration name: (identifier) @name) @class',
-            'go': '(type_declaration (type_spec name: (type_identifier) @name)) @class',
-            'cpp': '(class_specifier name: (type_identifier) @name) @class'
+        # Simple node type matching for different languages
+        class_types = {
+            'python': ['class_definition'],
+            'javascript': ['class_declaration'],
+            'java': ['class_declaration'],
+            'go': ['type_declaration'],
+            'cpp': ['class_specifier']
         }
         
-        if language not in query_patterns:
+        if language not in class_types:
             return classes
         
         try:
-            query = self.languages[language].query(query_patterns[language])
-            captures = query.captures(tree.root_node)
-            
-            for node, capture_name in captures:
-                if capture_name == 'class':
+            # Walk the tree and find class nodes
+            def walk_tree(node):
+                if node.type in class_types[language]:
                     class_info = self._extract_node_info(node, content)
                     if class_info:
                         classes.append(class_info)
+                
+                for child in node.children:
+                    walk_tree(child)
+            
+            walk_tree(tree.root_node)
                         
         except Exception as e:
             logger.error(f"Error extracting classes for {language}: {e}")
@@ -215,25 +223,29 @@ class MultiLanguageParser:
         """Extract import statements."""
         imports = []
         
-        query_patterns = {
-            'python': '(import_statement) @import',
-            'javascript': '(import_statement) @import',
-            'java': '(import_declaration) @import',
-            'go': '(import_declaration) @import',
-            'cpp': '(preproc_include) @import'
+        # Simple node type matching for different languages
+        import_types = {
+            'python': ['import_statement', 'import_from_statement'],
+            'javascript': ['import_statement'],
+            'java': ['import_declaration'],
+            'go': ['import_declaration'],
+            'cpp': ['preproc_include']
         }
         
-        if language not in query_patterns:
+        if language not in import_types:
             return imports
         
         try:
-            query = self.languages[language].query(query_patterns[language])
-            captures = query.captures(tree.root_node)
-            
-            for node, capture_name in captures:
-                if capture_name == 'import':
+            # Walk the tree and find import nodes
+            def walk_tree(node):
+                if node.type in import_types[language]:
                     import_text = content[node.start_byte:node.end_byte]
                     imports.append(import_text.strip())
+                
+                for child in node.children:
+                    walk_tree(child)
+            
+            walk_tree(tree.root_node)
                     
         except Exception as e:
             logger.error(f"Error extracting imports for {language}: {e}")
