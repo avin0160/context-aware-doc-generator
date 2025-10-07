@@ -305,44 +305,118 @@ class AdvancedRepositoryAnalyzer:
     def _generate_function_docstring(self, node: ast.FunctionDef, file_path: str, content: str, calls: List[str]) -> str:
         """Generate meaningful docstring based on function analysis"""
         func_name = node.name
+        params = [arg.arg for arg in node.args.args if arg.arg != 'self']
         
-        # Analyze function purpose from name and body
+        # Constructor patterns with parameter context
         if func_name == '__init__':
-            return f"Initialize a new {os.path.basename(file_path).replace('.py', '')} instance with the provided parameters."
-        elif func_name.startswith('_'):
-            return f"Internal helper method for {func_name[1:].replace('_', ' ')} operations."
-        elif 'insert' in func_name.lower():
-            return f"Insert a new item into the data structure. Handles key-value insertion with automatic tree balancing if needed."
-        elif 'delete' in func_name.lower():
-            return f"Remove an item from the data structure. Maintains structural integrity after deletion."
-        elif 'search' in func_name.lower():
-            return f"Search for an item in the data structure. Returns the associated value if found, None otherwise."
-        elif 'update' in func_name.lower():
-            return f"Update an existing item in the data structure with a new value."
-        elif 'validate' in func_name.lower():
-            return f"Validate input data against the defined schema and constraints."
-        elif 'range' in func_name.lower() and 'query' in func_name.lower():
-            return f"Perform a range query to retrieve all items between specified start and end keys."
-        elif func_name.lower().startswith('get'):
-            return f"Retrieve {func_name[3:].lower().replace('_', ' ')} from the data structure."
-        elif func_name.lower().startswith('is_'):
-            return f"Check if the current state satisfies the {func_name[3:].replace('_', ' ')} condition."
-        elif func_name.lower().startswith('has_'):
-            return f"Determine whether the structure has {func_name[4:].replace('_', ' ')}."
-        elif 'split' in func_name.lower():
-            return f"Split a node when it exceeds capacity, redistributing keys and maintaining tree properties."
-        elif 'merge' in func_name.lower():
-            return f"Merge nodes when underflow occurs, combining keys and values to maintain minimum capacity."
-        elif 'visualize' in func_name.lower():
-            return f"Generate a visual representation of the data structure for debugging and analysis."
-        else:
-            # Generate based on what the function actually does
-            if len(calls) > 5:
-                return f"Complex operation that coordinates multiple steps: {', '.join(calls[:3])}... Handles {func_name.replace('_', ' ')} workflow."
-            elif calls:
-                return f"Performs {func_name.replace('_', ' ')} operation using {', '.join(calls[:2])} for processing."
-            else:
-                return f"Handles {func_name.replace('_', ' ')} functionality for the data structure."
+            class_name = self._extract_class_name_from_context(file_path, content, node)
+            if params:
+                param_hints = ', '.join([p for p in params if not p.startswith('_')])
+                return f"Initialize {class_name} with {param_hints}"
+            return f"Initialize new {class_name} instance"
+        
+        # Database/CRUD operations with context
+        if 'search' in func_name.lower() or 'find' in func_name.lower():
+            if any(p in ['key', 'id', 'record_id'] for p in params):
+                return f"Search for item by key/ID and return value if found"
+            return "Search for items matching specified criteria"
+        
+        if 'insert' in func_name.lower() or 'add' in func_name.lower():
+            if 'key' in params and 'value' in params:
+                return "Insert key-value pair with automatic tree balancing"
+            elif 'record' in params:
+                return "Insert new record after schema validation"
+            return "Add new item to collection"
+        
+        if 'delete' in func_name.lower() or 'remove' in func_name.lower():
+            return "Remove item and maintain data structure integrity"
+        
+        if 'update' in func_name.lower():
+            if any(p in ['key', 'id', 'record_id'] for p in params):
+                return "Update existing item with new value"
+            return "Modify existing data"
+        
+        # Validation patterns
+        if 'validate' in func_name.lower() or 'check' in func_name.lower():
+            if 'record' in params or 'data' in params:
+                return "Validate data against schema and business rules"
+            condition = func_name.replace('check_', '').replace('validate_', '').replace('_', ' ')
+            return f"Validate {condition} requirements"
+        
+        # Query patterns
+        if 'range' in func_name.lower() and 'query' in func_name.lower():
+            return "Execute range query between start and end values"
+        elif 'query' in func_name.lower():
+            return "Execute database query and return results"
+        
+        # Helper method patterns
+        if func_name.startswith('_'):
+            operation = func_name[1:].replace('_', ' ')
+            if 'extract' in operation:
+                return f"Extract {operation.replace('extract ', '')} from data"
+            elif 'build' in operation or 'create' in operation:
+                return f"Build {operation.replace('build ', '').replace('create ', '')}"
+            elif 'handle' in operation:
+                return f"Handle {operation.replace('handle ', '')} scenarios"
+            return f"Internal helper for {operation}"
+        
+        # Getter patterns with context
+        if func_name.startswith('get_'):
+            target = func_name[4:].replace('_', ' ')
+            if target == 'all':
+                return "Retrieve all items from data structure"
+            return f"Get {target} information"
+        
+        # Boolean check patterns
+        if func_name.startswith('is_'):
+            condition = func_name[3:].replace('_', ' ')
+            return f"Check if {condition} condition is satisfied"
+        elif func_name.startswith('has_'):
+            condition = func_name[4:].replace('_', ' ')
+            return f"Determine if structure has {condition}"
+        
+        # Special patterns
+        if 'visualize' in func_name.lower() or 'render' in func_name.lower():
+            return "Generate visual representation for debugging and analysis"
+        
+        if 'split' in func_name.lower():
+            return "Split node when capacity exceeded, maintaining tree balance"
+        
+        if 'merge' in func_name.lower():
+            return "Merge nodes during underflow to maintain minimum capacity"
+        
+        # Analysis based on function calls and complexity
+        if len(calls) > 8:
+            return f"Complex multi-step operation coordinating {len(calls)} internal processes"
+        elif len(calls) > 4:
+            key_calls = [c for c in calls[:3] if c not in ['len', 'range', 'enumerate']]
+            if key_calls:
+                return f"Multi-step operation using {', '.join(key_calls)} and {len(calls)-len(key_calls)} other processes"
+            return f"Multi-step operation with {len(calls)} internal calls"
+        elif calls:
+            meaningful_calls = [c for c in calls if c not in ['len', 'range', 'enumerate']]
+            if meaningful_calls:
+                return f"Process data using {', '.join(meaningful_calls[:2])} operations"
+        
+        # Enhanced fallback with better context
+        clean_name = func_name.replace('_', ' ')
+        return f"Handle {clean_name} functionality"
+    
+    def _extract_class_name_from_context(self, file_path: str, content: str, func_node: ast.FunctionDef) -> str:
+        """Extract class name for better __init__ descriptions"""
+        try:
+            tree = ast.parse(content)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef):
+                    for item in node.body:
+                        if isinstance(item, ast.FunctionDef) and item.name == '__init__':
+                            if item.lineno == func_node.lineno:
+                                return node.name
+        except:
+            pass
+        return "instance"
+    
+
     
     def _infer_return_type_from_body(self, node: ast.FunctionDef, content: str) -> str:
         """Infer return type from function body analysis"""
@@ -541,14 +615,32 @@ class AdvancedRepositoryAnalyzer:
         
         avg_complexity = sum(complexities) / len(complexities) if complexities else 0
         
-        # Documentation coverage
+        # Documentation coverage - more realistic assessment
         documented_functions = 0
+        quality_documented = 0
+        
         for file_info in analysis['file_analysis'].values():
             for func in file_info['functions']:
                 if func.docstring:
                     documented_functions += 1
+                    # Check if docstring is meaningful (not just generic)
+                    if (func.docstring and 
+                        len(func.docstring) > 20 and 
+                        not func.docstring.startswith('Initialize a new') and
+                        'Handle' not in func.docstring and
+                        'Perform' not in func.docstring):
+                        quality_documented += 1
         
+        # Base coverage on actual docstrings
         doc_coverage = (documented_functions / total_functions * 100) if total_functions > 0 else 0
+        
+        # Adjust for quality - if most docstrings are generic, reduce the score
+        if documented_functions > 0:
+            quality_ratio = quality_documented / documented_functions
+            if quality_ratio < 0.3:  # Less than 30% are quality docstrings
+                doc_coverage = doc_coverage * 0.7  # Reduce by 30%
+            elif quality_ratio < 0.6:  # Less than 60% are quality docstrings
+                doc_coverage = doc_coverage * 0.85  # Reduce by 15%
         
         analysis['complexity_metrics'] = {
             'average_function_complexity': avg_complexity,
@@ -772,6 +864,56 @@ class DocumentationGenerator:
     def __init__(self):
         self.analyzer = AdvancedRepositoryAnalyzer()
     
+    def _infer_project_name(self, provided_name: str, analysis: Dict[str, Any], context: str) -> str:
+        """Intelligently infer project name avoiding generic temp names"""
+        
+        # Use provided name if it's meaningful
+        if provided_name and not provided_name.startswith('tmp') and provided_name not in ['Unknown Repository', 'Unknown_Repository']:
+            return provided_name
+        
+        # Try to extract from context
+        if context and len(context) > 10:
+            # Look for project names in context
+            context_words = context.lower().split()
+            meaningful_words = [w for w in context_words if len(w) > 3 and w.isalpha()]
+            if meaningful_words:
+                return meaningful_words[0].title() + " Project"
+        
+        # Infer from project type and main technologies
+        project_type = analysis.get('project_type', 'general_purpose_project')
+        technologies = analysis.get('key_technologies', [])
+        
+        # Create meaningful name based on type and tech
+        if project_type == 'database_project':
+            if any('tree' in str(tech).lower() for tech in technologies):
+                return "B+ Tree Database System"
+            return "Database Management System"
+        elif project_type == 'web_application':
+            if 'FastAPI' in str(technologies):
+                return "FastAPI Web Application"
+            elif 'Flask' in str(technologies):
+                return "Flask Web Service"
+            return "Web Application"
+        elif project_type == 'utility_library':
+            if 'documentation' in context.lower() or 'docs' in context.lower():
+                return "Documentation Generator"
+            return "Utility Library"
+        elif project_type == 'data_analysis_project':
+            return "Data Analysis Tool"
+        elif project_type == 'cli_tool':
+            return "Command Line Tool"
+        
+        # Final fallback based on main classes or functions
+        file_analysis = analysis.get('file_analysis', {})
+        for file_info in file_analysis.values():
+            classes = file_info.get('classes', [])
+            if classes:
+                main_class = classes[0].name if hasattr(classes[0], 'name') else str(classes[0])
+                if main_class and not main_class.startswith('_'):
+                    return f"{main_class} System"
+        
+        return f"{project_type.replace('_', ' ').title()}"
+    
     def generate_documentation(self, input_data: str, context: str, doc_style: str, 
                              input_type: str = 'auto', repo_name: str = '') -> str:
         """Generate comprehensive documentation"""
@@ -802,7 +944,7 @@ class DocumentationGenerator:
     def _generate_google_style(self, analysis: Dict[str, Any], context: str, repo_name: str) -> str:
         """Generate Google-style inline documentation focusing on code walkthrough"""
         
-        repo_name = repo_name or analysis.get('repo_name', 'Unknown Repository')
+        repo_name = self._infer_project_name(repo_name, analysis, context)
         project_type = analysis['project_type'].replace('_', ' ').title()
         
         # Generate comprehensive project understanding
@@ -890,7 +1032,7 @@ class DocumentationGenerator:
     def _generate_numpy_style(self, analysis: Dict[str, Any], context: str, repo_name: str) -> str:
         """Generate NumPy-style documentation with visual diagrams and scientific structure"""
         
-        repo_name = repo_name or analysis.get('repo_name', 'Unknown_Repository')
+        repo_name = self._infer_project_name(repo_name, analysis, context)
         
         doc = f"""
 {repo_name.upper()}
@@ -1023,7 +1165,7 @@ Examples & Workflow Diagrams
     def _generate_technical_markdown(self, analysis: Dict[str, Any], context: str, repo_name: str) -> str:
         """Generate comprehensive technical documentation with deep analysis"""
         
-        repo_name = repo_name or analysis.get('repo_name', 'Technical_Project')
+        repo_name = self._infer_project_name(repo_name, analysis, context)
         
         # Deep technical analysis
         architecture_summary = self._generate_architecture_summary(analysis)
@@ -1162,7 +1304,7 @@ Examples & Workflow Diagrams
     def _generate_opensource_style(self, analysis: Dict[str, Any], context: str, repo_name: str) -> str:
         """Generate comprehensive open-source contributor and maintainer documentation"""
         
-        repo_name = repo_name or analysis.get('repo_name', 'opensource-project')
+        repo_name = self._infer_project_name(repo_name, analysis, context)
         github_url = f"https://github.com/username/{repo_name.lower().replace('_', '-')}"
         
         # Analyze code health
@@ -1453,7 +1595,7 @@ This {analysis['project_type'].replace('_', ' ')} provides the following API:
                         if func.calls:
                             doc += f"**Calls:** {', '.join(func.calls[:3])}{'...' if len(func.calls) > 3 else ''}\n\n"
         
-        doc += "\n---\n\n*Generated by Advanced Repository Documentation Generator with CodeSearchNet integration*"
+        doc += "\n---\n\n*Auto-generated documentation - Last updated: " + analysis.get('timestamp', 'Unknown') + "*"
         
         return doc
     
@@ -2455,42 +2597,117 @@ def process_data(input_data):
 """
     
     def _generate_usage_examples(self, analysis: Dict[str, Any], project_type: str) -> str:
-        """Generate usage examples based on project type"""
+        """Generate project-specific usage examples based on actual code analysis"""
         
-        if project_type == 'web_application':
-            return """```python
-# Start the web application
-python app.py
+        # Extract actual class and function names from analysis
+        main_classes = []
+        main_functions = []
+        
+        for file_info in analysis.get('file_analysis', {}).values():
+            classes = file_info.get('classes', [])
+            functions = file_info.get('functions', [])
+            
+            # Get meaningful classes (not utility classes)
+            for cls in classes[:2]:  # Top 2 classes
+                if cls.name and not cls.name.startswith('_') and len(cls.methods) > 2:
+                    main_classes.append(cls.name)
+            
+            # Get key functions
+            for func in functions[:3]:  # Top 3 functions
+                if (func.name and not func.name.startswith('_') and 
+                    func.name not in ['__init__', 'main'] and
+                    func.complexity > 2):
+                    main_functions.append(func.name)
+        
+        if project_type == 'database_project':
+            if main_classes:
+                main_class = main_classes[0]
+                return f"""```python
+# Database operations example
+from main import {main_class}
 
-# Access endpoints
+# Initialize database
+db = {main_class}()
+
+# Basic operations
+{'db.create_table("users", {"id": int, "name": str})' if 'create' in str(main_functions) else 'db.insert("key1", "value1")'}
+{'db.insert({"id": 1, "name": "John"})' if 'insert' in str(main_functions) else 'result = db.search("key1")'}
+result = db.get{"_all()" if 'get_all' in str(main_functions) else '("key1")'}
+```"""
+            
+        elif project_type == 'web_application':
+            web_tech = 'FastAPI' if 'FastAPI' in str(analysis.get('key_technologies', [])) else 'Flask'
+            return f"""```python
+# Start the {web_tech} application
+python main.py
+
+# API usage example
 import requests
-response = requests.get('http://localhost:5000/api/endpoint')
+response = requests.get('http://localhost:8000/api/docs')  # Access documentation
+response = requests.post('http://localhost:8000/generate', json={{"data": "example"}})
 ```"""
         
-        elif project_type == 'data_analysis_project':
-            return """```python
-# Import the analysis modules
-from your_project import DataAnalyzer
+        elif project_type == 'utility_library':
+            if main_classes and main_functions:
+                main_class = main_classes[0]
+                main_func = main_functions[0]
+                return f"""```python
+# Import the main components
+from main import {main_class}
 
-# Create analyzer and process data
-analyzer = DataAnalyzer()
-results = analyzer.analyze_data('data.csv')
+# Initialize and use
+processor = {main_class}()
+result = processor.{main_func}(input_data)
+print(result)
+```"""
+            elif main_functions:
+                main_func = main_functions[0]
+                return f"""```python
+# Import and use key functions
+from main import {main_func}
+
+# Process your data
+result = {main_func}(your_input)
+print(result)
 ```"""
         
         elif project_type == 'command_line_tool':
             return """```bash
 # Command line usage
 python main.py --help
-python main.py --input file.txt --output results.txt
+python main.py --input data.txt --output results.txt
+
+# Or direct import
+python -c "from main import main; main()"
 ```"""
         
-        else:
-            return """```python
-# Import and use the library
-from your_project import main_function
+        # Fallback with actual function names if available
+        if main_classes:
+            main_class = main_classes[0]
+            return f"""```python
+# Import and use the main class
+from main import {main_class}
+
+# Initialize and use
+instance = {main_class}()
+result = instance.process(your_data)
+```"""
+        elif main_functions:
+            main_func = main_functions[0]
+            return f"""```python
+# Import and use key functions
+from main import {main_func}
 
 # Use the functionality
-result = main_function(parameters)
+result = {main_func}(your_parameters)
+```"""
+        else:
+            return """```python
+# Basic usage
+import main
+
+# See the module documentation for specific functions and classes
+help(main)
 ```"""
 
 # Main function for backward compatibility
