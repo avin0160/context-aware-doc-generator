@@ -9,9 +9,10 @@ import sys
 import subprocess
 import tempfile
 import uvicorn
-from fastapi import FastAPI, Form
+from fastapi import FastAPI, Form, File, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
-from typing import Optional
+from typing import Optional, List
+from fastapi import UploadFile as UploadedFile
 
 try:
     from comprehensive_docs import generate_comprehensive_documentation
@@ -167,8 +168,8 @@ async def home():
 <body>
     <div class="container">
         <div class="header">
-            <h1>Generic Documentation Generator</h1>
-            <p class="subtitle">AI-powered documentation using semantic code analysis</p>
+            <h1>🚀 Advanced Documentation Generator</h1>
+            <p class="subtitle">CodeSearchNet-inspired semantic analysis with multiple input support</p>
         </div>
         
         <div class="info">
@@ -209,14 +210,18 @@ async def home():
                     placeholder="Brief description: e.g., 'User management web application'">
             </div>
             
-            <div class="form-group">
-                <label for="doc_style">Documentation Style:</label>
-                <select id="doc_style" name="doc_style">
-                    <option value="technical">Technical (Detailed analysis)</option>
-                    <option value="api">API Reference</option>
+                        <div class="form-group">
+                <label for="style">Documentation Style:</label>
+                <select id="style" name="style" required>
+                    <option value="comprehensive">Comprehensive</option>
+                    <option value="google">Google Style</option>
+                    <option value="numpy">NumPy Style</option>
+                    <option value="technical_md">Technical Markdown</option>
+                    <option value="opensource">Open Source</option>
+                    <option value="technical">Technical</option>
+                    <option value="api">API Documentation</option>
                     <option value="user_guide">User Guide</option>
                     <option value="tutorial">Tutorial</option>
-                    <option value="comprehensive">Comprehensive</option>
                 </select>
             </div>
             
@@ -273,41 +278,171 @@ async def home():
     """)
 
 @app.post("/generate")
-async def generate_docs(
-    code_input: str = Form(...), 
-    context: str = Form(""), 
-    doc_style: str = Form("technical")
+async def generate_documentation(
+    context: str = Form(...),
+    doc_style: str = Form(default="comprehensive"),
+    files: List[UploadedFile] = File(...)
 ):
-    """Generate documentation using semantic analysis"""
+    """Generate documentation from uploaded files"""
+    
     try:
-        if not DOCS_AVAILABLE:
-            return JSONResponse({
-                "error": "Documentation generation not available",
-                "status": "Generic documentation system not loaded"
-            })
+        # Process uploaded files
+        file_contents = {}
         
-        # Create file_contents dict for analysis
-        file_contents = {"main.py": code_input}
+        for file in files:
+            if file.filename.endswith(('.py', '.pyx', '.pyi')):
+                content = await file.read()
+                file_contents[file.filename] = content.decode('utf-8', errors='ignore')
         
-        # Generate documentation
-        result = generate_comprehensive_documentation(
-            file_contents, 
-            context or "Code documentation", 
-            doc_style
-        )
+        if not file_contents:
+            raise HTTPException(status_code=400, detail="No Python files provided")
         
-        return JSONResponse({
-            "documentation": result,
-            "status": "Generated using semantic code analysis",
-            "method": "Generic documentation system",
-            "style": doc_style
-        })
+        # Try advanced generation first
+        try:
+            from comprehensive_docs_advanced import DocumentationGenerator
+            
+            generator = DocumentationGenerator()
+            analysis = generator.analyzer.analyze_repository_comprehensive(file_contents)
+            repo_name = "Uploaded Project"
+            
+            # Generate documentation using advanced methods
+            if doc_style == 'google':
+                documentation = generator._generate_google_style(analysis, context, repo_name)
+            elif doc_style == 'numpy':
+                documentation = generator._generate_numpy_style(analysis, context, repo_name)
+            elif doc_style == 'technical_md':
+                documentation = generator._generate_technical_markdown(analysis, context, repo_name)
+            elif doc_style == 'opensource':
+                documentation = generator._generate_opensource_style(analysis, context, repo_name)
+            elif doc_style == 'api':
+                documentation = generator._generate_api_documentation(analysis, context, repo_name)
+            else:
+                documentation = generator._generate_comprehensive_style(analysis, context, repo_name)
+                
+        except ImportError:
+            # Fallback to basic generation
+            documentation = generate_comprehensive_documentation(
+                file_contents=file_contents,
+                context=context,
+                doc_style=doc_style,
+                repo_path=""
+            )
+        
+        return {
+            "success": True,
+            "documentation": documentation,
+            "files_processed": len(file_contents),
+            "style_used": doc_style,
+            "features_used": "advanced" if 'comprehensive_docs_advanced' in locals() else "basic"
+        }
         
     except Exception as e:
-        return JSONResponse({
-            "error": str(e),
-            "status": "Generation failed"
-        })
+        print(f"Error generating documentation: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error generating documentation: {str(e)}")
+
+@app.post("/generate_from_repo")
+async def generate_from_repo(
+    repo_url: str = Form(...),
+    context: str = Form(...),
+    doc_style: str = Form(default="comprehensive")
+):
+    """Generate documentation from a git repository"""
+    
+    if not DOCS_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Documentation generation not available")
+    
+    try:
+        # Try using advanced multi-input handler first
+        try:
+            from comprehensive_docs_advanced import DocumentationGenerator
+            
+            print(f"Processing repository with advanced handler: {repo_url}")
+            
+            generator = DocumentationGenerator()
+            repo_name = repo_url.split('/')[-1].replace('.git', '')
+            
+            documentation = generator.generate_documentation(
+                input_data=repo_url,
+                context=context,
+                doc_style=doc_style,
+                input_type='git',
+                repo_name=repo_name
+            )
+            
+            return {
+                "success": True,
+                "documentation": documentation,
+                "repo_url": repo_url,
+                "style_used": doc_style,
+                "features_used": "advanced_multi_input"
+            }
+            
+        except ImportError:
+            print("Advanced features not available, using basic git processing")
+            
+            # Fallback to basic git processing
+            temp_dir = tempfile.mkdtemp()
+            
+            try:
+                # Clone repository
+                result = subprocess.run(
+                    ['git', 'clone', repo_url, temp_dir],
+                    capture_output=True,
+                    text=True,
+                    timeout=300  # 5 minute timeout
+                )
+                
+                if result.returncode != 0:
+                    raise Exception(f"Git clone failed: {result.stderr}")
+                
+                # Process the cloned repository
+                file_contents = {}
+                
+                for root, dirs, files in os.walk(temp_dir):
+                    dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['__pycache__', 'node_modules']]
+                    
+                    for file in files:
+                        if file.endswith('.py'):
+                            file_path = os.path.join(root, file)
+                            try:
+                                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                    relative_path = os.path.relpath(file_path, temp_dir)
+                                    file_contents[relative_path] = f.read()
+                            except Exception:
+                                continue
+                
+                if not file_contents:
+                    raise Exception("No Python files found in repository")
+                
+                # Generate documentation using enhanced system
+                documentation = generate_comprehensive_documentation(
+                    file_contents=file_contents,
+                    context=context,
+                    doc_style=doc_style,
+                    repo_path=temp_dir
+                )
+                
+                return {
+                    "success": True,
+                    "documentation": documentation,
+                    "files_processed": len(file_contents),
+                    "repo_url": repo_url,
+                    "features_used": "basic_git"
+                }
+                
+            finally:
+                import shutil
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=408, detail="Repository cloning timed out")
+    except Exception as e:
+        print(f"Error processing repository: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error processing repository: {str(e)}")
 
 @app.get("/test")
 async def test_system():

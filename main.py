@@ -26,67 +26,150 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def process_codebase_generic(
-    source_path: str,
-    is_repo: bool = False,
-    branch: str = "main",
-    output_dir: str = "docs_output",
-    doc_style: str = "technical",
-    context: str = ""
-):
-    """
-    Process codebase using generic documentation system
-    """
+def process_codebase_generic(repo_path, context, doc_style, output):
+    """Process a codebase using the enhanced semantic analysis system"""
+    
+    print(f"🔍 Analyzing repository: {repo_path}")
+    print(f"📝 Context: {context}")
+    print(f"🎨 Documentation style: {doc_style}")
+    
     try:
-        git_handler = create_git_handler()
+        from comprehensive_docs_advanced import DocumentationGenerator, MultiInputHandler
         
-        # Get codebase path
-        if is_repo:
-            logger.info(f"Cloning repository: {source_path}")
-            codebase_path = git_handler.clone_repository(source_path, branch)
+        # Determine input type and process accordingly
+        if repo_path.startswith(('http://', 'https://')):
+            print("🌐 Detected git repository URL")
+            input_type = 'git'
+            input_data = repo_path
+        elif repo_path.endswith('.zip'):
+            print("📦 Detected zip file")
+            input_type = 'zip'
+            input_data = repo_path
+        elif os.path.isfile(repo_path) and repo_path.endswith('.py'):
+            print("📄 Detected single Python file")
+            with open(repo_path, 'r', encoding='utf-8') as f:
+                input_data = f.read()
+            input_type = 'code'
         else:
-            codebase_path = source_path
+            print("📁 Detected local directory")
+            # Process directory manually for better control
+            file_contents = {}
+            
+            for root, dirs, files in os.walk(repo_path):
+                # Skip hidden directories and common build/cache directories
+                dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['__pycache__', 'node_modules', '.git', 'venv', 'env']]
+                
+                for file in files:
+                    if file.endswith(('.py', '.pyx', '.pyi')):  # Include more Python file types
+                        file_path = os.path.join(root, file)
+                        try:
+                            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                relative_path = os.path.relpath(file_path, repo_path)
+                                file_contents[relative_path] = f.read()
+                        except Exception as e:
+                            print(f"⚠️  Could not read {file_path}: {e}")
+            
+            if not file_contents:
+                print("❌ No Python files found in the repository")
+                return
+            
+            print(f"📂 Found {len(file_contents)} Python files")
+            
+            # Use advanced generator directly
+            generator = DocumentationGenerator()
+            analysis = generator.analyzer.analyze_repository_comprehensive(file_contents)
+            repo_name = os.path.basename(repo_path) if repo_path else 'Repository'
+            
+            # Generate documentation using the appropriate method
+            if doc_style == 'google':
+                documentation = generator._generate_google_style(analysis, context, repo_name)
+            elif doc_style == 'numpy':
+                documentation = generator._generate_numpy_style(analysis, context, repo_name)
+            elif doc_style == 'technical_md':
+                documentation = generator._generate_technical_markdown(analysis, context, repo_name)
+            elif doc_style == 'opensource':
+                documentation = generator._generate_opensource_style(analysis, context, repo_name)
+            elif doc_style == 'api':
+                documentation = generator._generate_api_documentation(analysis, context, repo_name)
+            else:
+                documentation = generator._generate_comprehensive_style(analysis, context, repo_name)
+            
+            # Write output
+            with open(output, 'w', encoding='utf-8') as f:
+                f.write(documentation)
+            
+            print(f"✅ Advanced documentation generated successfully: {output}")
+            return
         
-        if not os.path.exists(codebase_path):
-            raise FileNotFoundError(f"Path does not exist: {codebase_path}")
+        # For remote inputs, use the advanced input handler
+        print("🚀 Using advanced multi-input processing...")
+        generator = DocumentationGenerator()
+        repo_name = os.path.basename(repo_path.rstrip('/')) if not input_type == 'code' else 'Project'
         
-        # Read all Python files
-        file_contents = {}
-        for root, dirs, files in os.walk(codebase_path):
+        documentation = generator.generate_documentation(
+            input_data=input_data,
+            context=context,
+            doc_style=doc_style,
+            input_type=input_type,
+            repo_name=repo_name
+        )
+        
+        # Write output
+        with open(output, 'w', encoding='utf-8') as f:
+            f.write(documentation)
+        
+        print(f"✅ Advanced documentation generated successfully: {output}")
+        
+    except ImportError:
+        print("⚠️  Advanced features not available, using basic generator...")
+        # Fallback to basic processing
+        _process_basic_generic(repo_path, context, doc_style, output)
+        
+    except Exception as e:
+        print(f"❌ Error generating documentation: {e}")
+        import traceback
+        traceback.print_exc()
+
+def _process_basic_generic(repo_path, context, doc_style, output):
+    """Fallback basic processing"""
+    
+    file_contents = {}
+    
+    if os.path.isfile(repo_path):
+        with open(repo_path, 'r', encoding='utf-8', errors='ignore') as f:
+            file_contents[repo_path] = f.read()
+    else:
+        for root, dirs, files in os.walk(repo_path):
+            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['__pycache__', 'node_modules', '.git']]
+            
             for file in files:
                 if file.endswith('.py'):
                     file_path = os.path.join(root, file)
                     try:
                         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                            relative_path = os.path.relpath(file_path, codebase_path)
+                            relative_path = os.path.relpath(file_path, repo_path)
                             file_contents[relative_path] = f.read()
                     except Exception as e:
-                        logger.warning(f"Could not read {file_path}: {e}")
-        
-        logger.info(f"Found {len(file_contents)} Python files")
-        
-        # Generate documentation using generic system
-        logger.info("Generating generic documentation...")
-        documentation = generate_comprehensive_documentation(
-            file_contents, 
-            context or "Repository analysis", 
-            doc_style,
-            codebase_path
-        )
-        
-        # Create output directory
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Save documentation
-        output_file = os.path.join(output_dir, f"documentation_{doc_style}.md")
-        with open(output_file, 'w', encoding='utf-8') as f:
-            f.write(documentation)
-        
-        logger.info(f"Documentation saved to: {output_file}")
-        
-    except Exception as e:
-        logger.error(f"Error processing codebase: {e}")
-        raise
+                        print(f"⚠️  Could not read {file_path}: {e}")
+    
+    if not file_contents:
+        print("❌ No Python files found")
+        return
+    
+    # Use basic generator
+    from comprehensive_docs import generate_comprehensive_documentation
+    
+    documentation = generate_comprehensive_documentation(
+        file_contents=file_contents,
+        context=context,
+        doc_style=doc_style,
+        repo_path=repo_path
+    )
+    
+    with open(output, 'w', encoding='utf-8') as f:
+        f.write(documentation)
+    
+    print(f"✅ Basic documentation generated: {output}")
 
 def process_codebase(
     source_path: str,
@@ -281,9 +364,10 @@ Examples:
     
     parser.add_argument(
         "--style",
-        choices=["technical", "api", "user_guide", "tutorial", "comprehensive"],
+        choices=["technical", "api", "user_guide", "tutorial", "comprehensive",
+                "google", "numpy", "technical_md", "opensource"],
         default="technical",
-        help="Documentation style (default: technical)"
+        help="Documentation style: technical, api, user_guide, tutorial, comprehensive, google, numpy, technical_md, opensource (default: technical)"
     )
     
     parser.add_argument(

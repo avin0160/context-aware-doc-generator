@@ -6,14 +6,22 @@ Generates repository-specific documentation without hardcoded templates
 """
 
 import os
-import re
 import ast
+import re
+from typing import Dict, List, Tuple, Any
+from collections import defaultdict, Counter
 import json
-from typing import Dict, List, Tuple, Any, Optional
-from collections import defaultdict
+
+# Import the advanced analyzer
+from comprehensive_docs_advanced import (
+    DocumentationGenerator,
+    MultiInputHandler,
+    AdvancedRepositoryAnalyzer,
+    CodeSearchNetEnhancedAnalyzer
+)
 
 class CodeSearchNetAnalyzer:
-    """Analyzer based on CodeSearchNet dataset patterns for semantic understanding"""
+    """Analyzer that uses CodeSearchNet patterns for semantic understanding"""
     
     def __init__(self):
         self.function_patterns = {
@@ -257,23 +265,61 @@ def find_entry_points(functions: List[Dict]) -> List[str]:
     return entry_points
 
 def generate_comprehensive_documentation(file_contents: Dict[str, str], context: str, doc_style: str, repo_path: str = '') -> str:
-    """Generate comprehensive documentation based on semantic analysis"""
+    """Generate comprehensive documentation with advanced features"""
     
-    # Perform semantic analysis
-    analysis = analyze_repository_semantically(file_contents)
-    repo_name = os.path.basename(repo_path) if repo_path else 'Repository'
-    
-    # Generate documentation based on project type and style
-    if doc_style == "technical":
-        return generate_technical_documentation(analysis, context, repo_name)
-    elif doc_style == "api":
-        return generate_api_documentation(analysis, context, repo_name)
-    elif doc_style == "user_guide":
-        return generate_user_guide(analysis, context, repo_name)
-    elif doc_style == "tutorial":
-        return generate_tutorial_documentation(analysis, context, repo_name)
-    else:
-        return generate_comprehensive_overview(analysis, context, repo_name)
+    # Try to use the advanced generator first
+    try:
+        generator = DocumentationGenerator()
+        repo_name = os.path.basename(repo_path) if repo_path else "Repository"
+        
+        # Map old styles to new comprehensive styles
+        style_mapping = {
+            'technical': 'technical_md',
+            'api': 'api', 
+            'user_guide': 'opensource',
+            'tutorial': 'google',
+            'comprehensive': 'comprehensive',
+            'google': 'google',
+            'numpy': 'numpy',
+            'technical_md': 'technical_md',
+            'opensource': 'opensource'
+        }
+        
+        mapped_style = style_mapping.get(doc_style, 'comprehensive')
+        
+        # Use advanced analyzer for better results
+        analysis = generator.analyzer.analyze_repository_comprehensive(file_contents)
+        
+        # Generate using the appropriate advanced method
+        if mapped_style == 'google':
+            return generator._generate_google_style(analysis, context, repo_name)
+        elif mapped_style == 'numpy':
+            return generator._generate_numpy_style(analysis, context, repo_name)
+        elif mapped_style == 'technical_md':
+            return generator._generate_technical_markdown(analysis, context, repo_name)
+        elif mapped_style == 'opensource':
+            return generator._generate_opensource_style(analysis, context, repo_name)
+        elif mapped_style == 'api':
+            return generator._generate_api_documentation(analysis, context, repo_name)
+        else:
+            return generator._generate_comprehensive_style(analysis, context, repo_name)
+            
+    except Exception as e:
+        print(f"Advanced generation failed, using fallback: {e}")
+        # Fallback to original method
+        analysis = analyze_repository_semantically(file_contents)
+        repo_name = os.path.basename(repo_path) if repo_path else 'Repository'
+        
+        if doc_style == "technical":
+            return generate_technical_documentation(analysis, context, repo_name)
+        elif doc_style == "api":
+            return generate_api_documentation(analysis, context, repo_name)
+        elif doc_style == "user_guide":
+            return generate_user_guide(analysis, context, repo_name)
+        elif doc_style == "tutorial":
+            return generate_tutorial_documentation(analysis, context, repo_name)
+        else:
+            return generate_comprehensive_overview(analysis, context, repo_name)
 
 def generate_technical_documentation(analysis: Dict, context: str, repo_name: str) -> str:
     """Generate technical documentation based on actual code analysis"""
