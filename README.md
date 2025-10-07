@@ -1,329 +1,71 @@
-# Context-Aware Code Documentation Generator
+# 🚀 Context-Aware Documentation Generator - Colab Ready
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com/)
-[![Streamlit](https://img.shields.io/badge/Streamlit-1.28+-red.svg)](https://streamlit.io/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+## 📋 **Quick Colab Setup (5 minutes)**
 
-An intelligent system that analyzes codebases in multiple programming languages and generates comprehensive, context-aware documentation using advanced AI techniques including RAG (Retrieval-Augmented Generation) and fine-tuned language models.
-
-## 🚀 Features
-
-- **Multi-Language Support**: Parse and analyze Python, JavaScript, Java, Go, C++, and more using tree-sitter
-- **Context-Aware Generation**: Uses RAG with sentence transformers and FAISS for intelligent context retrieval
-- **Multiple Input Methods**: Support for GitHub repositories and ZIP file uploads
-- **Dual Output Formats**: 
-  - Google/NumPy/Sphinx-style in-code docstrings
-  - Comprehensive Markdown documentation
-- **Advanced AI**: Powered by Microsoft Phi-3-mini-4k-instruct with QLoRA fine-tuning support
-- **Web Interface**: User-friendly Streamlit frontend with FastAPI backend
-- **CLI Tool**: Command-line interface for batch processing and automation
-
-## 🛠 Technology Stack
-
-- **Parsing**: tree-sitter for universal syntax tree parsing
-- **Embeddings**: sentence-transformers/all-MiniLM-L6-v2 for semantic understanding
-- **Vector Search**: FAISS for efficient similarity search
-- **LLM**: Microsoft Phi-3-mini-4k-instruct with QLoRA optimization
-- **Backend**: FastAPI for robust API services
-- **Frontend**: Streamlit for interactive web interface
-- **Git Integration**: GitPython for repository handling
-
-## 📦 Installation
-
-### Prerequisites
-
-- Python 3.8 or higher
-- CUDA-compatible GPU (recommended for faster processing)
-- Git
-
-### Quick Setup
-
+### **Step 1: Clone & Setup**
 ```bash
-# Clone the repository
-git clone https://github.com/avin0160/context-aware-doc-generator.git
-cd context-aware-doc-generator
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Install tree-sitter language grammars (if needed)
-# These are typically installed automatically with the packages
-```
-
-### For Google Colab
-
-```python
-# Method 1: Upload the project folder to Colab
-# 1. Download/clone the project
-# 2. Upload the entire folder to Colab
-# 3. Open notebooks/colab_setup.ipynb and run all cells
-
-# Method 2: Clone directly in Colab
+# In Colab cell:
 !git clone https://github.com/avin0160/context-aware-doc-generator.git
 %cd context-aware-doc-generator
-
-# Then run the setup
-!python setup_colab.py
-
-# Or use the step-by-step notebook
-# Open notebooks/colab_setup.ipynb
+!pip install -r requirements.txt
 ```
 
-## 🎯 Usage
-
-### Web Interface (Recommended)
-
-1. **Start the FastAPI backend:**
+### **Step 2: Terminal Testing (Recommended)**
 ```bash
-python -m uvicorn src.api:app --reload --host 0.0.0.0 --port 8000
+# Quick validation (30 seconds)
+!python3 final_test.py
+
+# Interactive demo  
+!python3 terminal_demo.py
+
+# Comprehensive test
+!python3 enhanced_test.py
 ```
 
-2. **Launch the Streamlit frontend:**
+### **Step 3: Web Interface with Public URL**
 ```bash
-streamlit run src/frontend.py
+# Creates public ngrok URL
+!python3 ngrok_tunnel.py
 ```
 
-3. **Access the web interface** at `http://localhost:8501`
+## 🎯 **What You Get:**
 
-### Command Line Interface
+### **Terminal Commands:**
+- ✅ `final_test.py` - System validation with AI results
+- ✅ `terminal_demo.py` - Interactive exploration
+- ✅ `enhanced_test.py` - Real file parsing demo
 
-```bash
-# Generate docs for a local codebase
-python main.py /path/to/your/codebase --output documentation
+### **Web Interface:**
+- ✅ `ngrok_tunnel.py` - Public URL for localhost access
+- ✅ Full Streamlit interface accessible from anywhere
+- ✅ No "localhost not accessible" issues
 
-# Generate docs for a GitHub repository
-python main.py https://github.com/username/repository --repo --output docs
-
-# Use specific documentation style and branch
-python main.py https://github.com/username/repo --repo --branch develop --style numpy
-```
-
-### Terminal Demo (Perfect for Colab)
+## 🏆 **Academic Demo Script:**
 
 ```bash
-# Final comprehensive system test
-python final_test.py
+# Perfect for presentations:
+print("=" * 50)print("
 
-# Complete functionality demonstration
-python terminal_demo.py
+# Show system working
+!python3 final_test.py
 
-# Enhanced test with real code files
-python enhanced_test.py
-
-# Individual component testing
-python -c "from src.parser import create_parser; print('✅ Parser working!')"
-python -c "from src.rag import create_rag_system; print('✅ RAG system working!')"
+print("\n🌐 Starting web interface...")
+# Start web interface with public access
+!python3 ngrok_tunnel.py
 ```
 
-## 🔄 GitHub Updates
+## ⚡ **Why This Setup is Perfect:**
 
-The project includes several convenient methods to keep your GitHub repository updated:
-
-### Method 1: Quick Update Script
-```bash
-# Update with custom message
-./update_github.sh "Add new feature implementation"
-
-# Update with default timestamp message
-./update_github.sh
-```
-
-### Method 2: Setup Git Hooks (Optional)
-```bash
-# Setup automatic hooks
-./setup_git_hooks.sh
-
-# Enable auto-push after every commit
-export AUTO_PUSH=true
-git add .
-git commit -m "Your changes"
-# Automatically pushes to GitHub
-```
-
-### Method 3: Manual Updates (Traditional)
-```bash
-git add .
-git commit -m "Your commit message"
-git push origin main
-```
-
-### API Usage
-
-```python
-import requests
-
-# Process a GitHub repository
-response = requests.post("http://localhost:8000/generate-docs/repo", json={
-    "repo_url": "https://github.com/username/repository",
-    "branch": "main",
-    "doc_style": "google"
-})
-
-result = response.json()
-print(result["markdown_docs"])
-```
-
-## 📁 Project Structure
-
-```
-context-aware-doc-generator/
-├── src/
-│   ├── __init__.py              # Package initialization
-│   ├── parser.py                # Multi-language code parser
-│   ├── rag.py                   # RAG system with embeddings
-│   ├── llm.py                   # LLM handler and fine-tuning
-│   ├── git_handler.py           # Git repository management
-│   ├── api.py                   # FastAPI backend
-│   └── frontend.py              # Streamlit web interface
-├── main.py                      # CLI entry point
-├── requirements.txt             # Python dependencies
-├── README.md                    # This file
-└── notebooks/                   # Jupyter notebooks for development
-    ├── training.ipynb           # Model fine-tuning
-    ├── evaluation.ipynb         # Performance evaluation
-    └── examples.ipynb           # Usage examples
-```
-
-## 🔧 Configuration
-
-### Environment Variables
-
-Create a `.env` file:
-
-```env
-# Model configurations
-HUGGINGFACE_TOKEN=your_token_here
-MODEL_CACHE_DIR=./models
-
-# API configurations
-API_HOST=0.0.0.0
-API_PORT=8000
-
-# Logging
-LOG_LEVEL=INFO
-```
-
-### Documentation Styles
-
-- **Google Style**: Clean, readable format with sections for Args, Returns, Raises
-- **NumPy Style**: Scientific Python standard with structured parameter descriptions
-- **Sphinx Style**: reStructuredText format for Sphinx documentation generation
-
-## 🤖 Model Fine-tuning
-
-The system supports fine-tuning the Phi-3 model on your specific domain:
-
-```python
-from src.llm import create_documentation_generator
-
-# Initialize generator
-doc_gen = create_documentation_generator()
-
-# Prepare for training
-doc_gen.prepare_for_training()
-
-# Create training dataset
-training_examples = [
-    {
-        "input": "def calculate_area(length, width):\n    return length * width",
-        "output": '"""\nCalculate the area of a rectangle.\n\nArgs:\n    length (float): Rectangle length\n    width (float): Rectangle width\n\nReturns:\n    float: The calculated area\n"""'
-    }
-]
-
-# Fine-tune (see notebooks/training.ipynb for complete example)
-```
-
-## 📊 Performance
-
-- **Processing Speed**: ~100 files per minute (CPU), ~500 files per minute (GPU)
-- **Memory Usage**: ~2-4GB RAM for typical repositories
-- **Supported Languages**: Python, JavaScript, TypeScript, Java, Go, C++, C#, Ruby, PHP
-- **Maximum Repository Size**: ~10,000 files (can be increased with optimization)
-
-## 🧪 Examples
-
-### Example Output - Python Function
-
-**Input:**
-```python
-def fibonacci(n):
-    if n <= 1:
-        return n
-    return fibonacci(n-1) + fibonacci(n-2)
-```
-
-**Generated Docstring:**
-```python
-def fibonacci(n):
-    """
-    Calculate the nth Fibonacci number using recursion.
-    
-    Args:
-        n (int): The position in the Fibonacci sequence (0-indexed).
-    
-    Returns:
-        int: The nth Fibonacci number.
-    
-    Note:
-        This implementation uses recursion and may be slow for large values of n.
-        Consider using dynamic programming for better performance.
-    """
-    if n <= 1:
-        return n
-    return fibonacci(n-1) + fibonacci(n-2)
-```
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
-
-### Development Setup
-
-```bash
-# Clone and setup development environment
-git clone https://github.com/avin0160/context-aware-doc-generator.git
-cd context-aware-doc-generator
-
-# Install development dependencies
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
-
-# Run tests
-pytest tests/
-
-# Format code
-black src/
-flake8 src/
-```
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **Microsoft** for the Phi-3 model
-- **Hugging Face** for the transformers library
-- **tree-sitter** community for language parsers
-- **Sentence Transformers** for embedding models
-- **Facebook Research** for FAISS
-
-## 📞 Support
-
-- **Issues**: [GitHub Issues](https://github.com/avin0160/context-aware-doc-generator/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/avin0160/context-aware-doc-generator/discussions)
-- **Email**: [avin0160@example.com](mailto:avin0160@example.com)
-
-## 🗺 Roadmap
-
-- [ ] Support for more programming languages (Rust, Kotlin, Swift)
-- [ ] Integration with popular IDEs (VS Code extension)
-- [ ] Batch processing for multiple repositories
-- [ ] Custom model training interface
-- [ ] Documentation quality scoring
-- [ ] Integration with documentation platforms (GitBook, Notion)
+1. **Terminal-focused** - No localhost issues
+2. **ngrok tunnel** - Public access when needed  
+3. **Minimal files** - Only essentials kept
+4. **Colab optimized** - Works perfectly in Google Colab
+5. **Academic ready** - Clean, professional demos
 
 ---
 
-**Built with ❤️ for the developer community**
+**Your system demonstrates:**
+- 🧠 Advanced AI (RAG + LLM + Semantic Search)
+- 🌍 Multi-language parsing (6+ languages)
+- ⚡ Real-time code analysis
+- 🎯 Production-quality architecture
