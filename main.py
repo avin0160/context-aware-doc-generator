@@ -16,6 +16,7 @@ from src.parser import create_parser
 from src.rag import create_rag_system
 from src.llm import create_documentation_generator
 from src.git_handler import create_git_handler
+from comprehensive_docs import generate_comprehensive_documentation
 
 # Configure logging
 logging.basicConfig(
@@ -25,12 +26,74 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def process_codebase_generic(
+    source_path: str,
+    is_repo: bool = False,
+    branch: str = "main",
+    output_dir: str = "docs_output",
+    doc_style: str = "technical",
+    context: str = ""
+):
+    """
+    Process codebase using generic documentation system
+    """
+    try:
+        git_handler = create_git_handler()
+        
+        # Get codebase path
+        if is_repo:
+            logger.info(f"Cloning repository: {source_path}")
+            codebase_path = git_handler.clone_repository(source_path, branch)
+        else:
+            codebase_path = source_path
+        
+        if not os.path.exists(codebase_path):
+            raise FileNotFoundError(f"Path does not exist: {codebase_path}")
+        
+        # Read all Python files
+        file_contents = {}
+        for root, dirs, files in os.walk(codebase_path):
+            for file in files:
+                if file.endswith('.py'):
+                    file_path = os.path.join(root, file)
+                    try:
+                        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                            relative_path = os.path.relpath(file_path, codebase_path)
+                            file_contents[relative_path] = f.read()
+                    except Exception as e:
+                        logger.warning(f"Could not read {file_path}: {e}")
+        
+        logger.info(f"Found {len(file_contents)} Python files")
+        
+        # Generate documentation using generic system
+        logger.info("Generating generic documentation...")
+        documentation = generate_comprehensive_documentation(
+            file_contents, 
+            context or "Repository analysis", 
+            doc_style,
+            codebase_path
+        )
+        
+        # Create output directory
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Save documentation
+        output_file = os.path.join(output_dir, f"documentation_{doc_style}.md")
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write(documentation)
+        
+        logger.info(f"Documentation saved to: {output_file}")
+        
+    except Exception as e:
+        logger.error(f"Error processing codebase: {e}")
+        raise
+
 def process_codebase(
     source_path: str,
     is_repo: bool = False,
     branch: str = "main",
     output_dir: str = "docs_output",
-    doc_style: str = "google"
+    doc_style: str = "technical"
 ):
     """
     Process a codebase and generate documentation.
@@ -218,9 +281,21 @@ Examples:
     
     parser.add_argument(
         "--style",
-        choices=["google", "numpy", "sphinx"],
-        default="google",
-        help="Documentation style (default: google)"
+        choices=["technical", "api", "user_guide", "tutorial", "comprehensive"],
+        default="technical",
+        help="Documentation style (default: technical)"
+    )
+    
+    parser.add_argument(
+        "--context",
+        default="",
+        help="Additional context about the project"
+    )
+    
+    parser.add_argument(
+        "--use-generic",
+        action="store_true",
+        help="Use generic documentation system instead of RAG-based system"
     )
     
     parser.add_argument(
@@ -237,13 +312,35 @@ Examples:
         logging.getLogger().setLevel(logging.DEBUG)
     
     # Process the codebase
-    process_codebase(
-        source_path=args.source,
-        is_repo=args.repo,
-        branch=args.branch,
-        output_dir=args.output,
-        doc_style=args.style
-    )
+    if args.use_generic:
+        process_codebase_generic(
+            source_path=args.source,
+            is_repo=args.repo,
+            branch=args.branch,
+            output_dir=args.output,
+            doc_style=args.style,
+            context=args.context
+        )
+    else:
+        # Use generic system by default (old RAG system as fallback)
+        try:
+            process_codebase_generic(
+                source_path=args.source,
+                is_repo=args.repo,
+                branch=args.branch,
+                output_dir=args.output,
+                doc_style=args.style,
+                context=args.context
+            )
+        except Exception as e:
+            logger.warning(f"Generic system failed: {e}, falling back to original system")
+            process_codebase(
+                source_path=args.source,
+                is_repo=args.repo,
+                branch=args.branch,
+                output_dir=args.output,
+                doc_style=args.style
+            )
 
 
 if __name__ == "__main__":

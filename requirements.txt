@@ -18,6 +18,11 @@ gitpython==3.1.40
 # RAG and embeddings
 sentence-transformers==3.3.0
 faiss-cpu==1.9.0
+datasets>=2.15.0
+
+# CodeSearchNet dataset support
+transformers>=4.35.0
+torch>=2.0.0
 numpy>=1.24.0
 
 # LLM and fine-tuning
