@@ -914,6 +914,64 @@ class DocumentationGenerator:
         
         return f"{project_type.replace('_', ' ').title()}"
     
+    def _improve_function_descriptions(self, func_info: Any, context: str) -> str:
+        """
+        Generate better, more specific function descriptions
+        """
+        func_name = func_info.name.lower()
+        
+        # Handle common patterns with better descriptions
+        if func_name == '__init__':
+            if 'tree' in context.lower():
+                return f"Initialize tree structure with specified configuration"
+            elif 'manager' in context.lower():
+                return f"Initialize manager with required parameters"
+            elif 'node' in context.lower():
+                return f"Create new node with given properties"
+            else:
+                return f"Initialize {context} instance with provided parameters"
+        
+        elif func_name.startswith('get_'):
+            item = func_name[4:].replace('_', ' ')
+            return f"Retrieve {item} from the system"
+        
+        elif func_name.startswith('set_'):
+            item = func_name[4:].replace('_', ' ')
+            return f"Update {item} in the system"
+        
+        elif func_name.startswith('is_'):
+            condition = func_name[3:].replace('_', ' ')
+            return f"Check if condition '{condition}' is met"
+        
+        elif func_name.startswith('has_'):
+            item = func_name[4:].replace('_', ' ')
+            return f"Verify presence of {item}"
+        
+        elif 'insert' in func_name:
+            return f"Add new item to the data structure with validation"
+        
+        elif 'delete' in func_name or 'remove' in func_name:
+            return f"Remove specified item from the system"
+        
+        elif 'search' in func_name or 'find' in func_name:
+            return f"Locate and return matching items"
+        
+        elif 'split' in func_name:
+            return f"Divide structure when capacity is exceeded"
+        
+        elif 'merge' in func_name:
+            return f"Combine structures to maintain balance"
+            
+        # Use existing docstring if it's meaningful
+        if hasattr(func_info, 'docstring') and func_info.docstring:
+            if (len(func_info.docstring) > 20 and 
+                not func_info.docstring.startswith('Initialize a new') and
+                'Handle' not in func_info.docstring):
+                return func_info.docstring.split('\n')[0].strip()
+        
+        # Generic fallback
+        return f"Handle {func_name.replace('_', ' ')} operations"
+    
     def generate_documentation(self, input_data: str, context: str, doc_style: str, 
                              input_type: str = 'auto', repo_name: str = '') -> str:
         """Generate comprehensive documentation"""
