@@ -590,21 +590,26 @@ async def root():
                     <div class="style-grid">
                         <div class="style-option selected" data-style="google" onclick="selectStyle('google')">
                             <strong>Google Style</strong>
-                            <div class="example">Args, Returns, Raises</div>
+                            <div class="example">Inline docstrings with Args/Returns</div>
+                        </div>
+                        <div class="style-option" data-style="opensource" onclick="selectStyle('opensource')">
+                            <strong>Open Source</strong>
+                            <div class="example">README + API docs for collaboration</div>
                         </div>
                         <div class="style-option" data-style="numpy" onclick="selectStyle('numpy')">
                             <strong>NumPy Style</strong>
                             <div class="example">Parameters, Returns sections</div>
                         </div>
-                        <div class="style-option" data-style="markdown" onclick="selectStyle('markdown')">
-                            <strong>Markdown</strong>
-                            <div class="example">Clean MD formatting</div>
+                                                <div class="style-option" data-style="markdown" onclick="selectStyle('markdown')">
+                            <strong>Technical MD</strong>
+                            <div class="example">Detailed technical documentation</div>
                         </div>
                     </div>
                     <select name="doc_style" style="display: none;">
-                        <option value="google" selected>Google Style</option>
+                        <option value="google" selected>Google Style (Inline Docstrings)</option>
+                        <option value="opensource">Open Source (README + API)</option>
                         <option value="numpy">NumPy Style</option>
-                        <option value="markdown">Markdown</option>
+                        <option value="markdown">Technical Markdown</option>
                     </select>
                 </div>
                 
@@ -624,16 +629,16 @@ Target audience: Computer science students and researchers"></textarea>
                     <p>Git URLs, ZIP files, and direct code input</p>
                 </div>
                 <div class="feature">
-                    <h4>📋 Multiple Styles</h4>
-                    <p>Google, NumPy, and Markdown documentation formats</p>
+                    <h4>📋 Professional Documentation</h4>
+                    <p>Google docstrings, Open Source READMEs, Technical docs</p>
                 </div>
                 <div class="feature">
-                    <h4>🧠 AI-Powered</h4>
-                    <p>Context-aware analysis with intelligent fallbacks</p>
+                    <h4>🧠 Deep Analysis</h4>
+                    <p>Architecture understanding, API design, maintenance guides</p>
                 </div>
                 <div class="feature">
-                    <h4>🌐 Colab Ready</h4>
-                    <p>Optimized for Google Colab with ngrok tunneling</p>
+                    <h4>🤝 Collaboration Ready</h4>
+                    <p>Open source standards, contribution guides, API references</p>
                 </div>
             </div>
             
