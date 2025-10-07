@@ -304,7 +304,18 @@ result = function_name(arg1, arg2)
     })
 
 def generate_styled_documentation(file_contents: dict, context: str, doc_style: str, repo_path: str):
-    """Generate documentation in the specified style"""
+    """Generate comprehensive documentation in the specified style"""
+    
+    # Import the comprehensive documentation generator
+    try:
+        from comprehensive_docs import generate_comprehensive_documentation
+        return generate_comprehensive_documentation(file_contents, context, doc_style, repo_path)
+    except ImportError:
+        # Fallback to basic analysis if comprehensive_docs not available
+        return generate_basic_repository_analysis(file_contents, context, doc_style, repo_path)
+
+def generate_basic_repository_analysis(file_contents: dict, context: str, doc_style: str, repo_path: str):
+    """Fallback basic repository analysis"""
     
     # Analyze the files
     total_lines = sum(len(content.split('\n')) for content in file_contents.values())
