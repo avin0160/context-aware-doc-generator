@@ -157,9 +157,10 @@ async def analyze_repository_structure(repo_path: str, context: str, doc_style: 
         file_contents = {}
         for file_path in code_files[:10]:  # Limit to first 10 files
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                     content = f.read()
-                    file_contents[os.path.relpath(file_path, repo_path)] = content[:2000]  # First 2000 chars
+                    # For comprehensive analysis, read complete files
+                    file_contents[os.path.relpath(file_path, repo_path)] = content
             except:
                 continue
         
