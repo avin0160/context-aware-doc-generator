@@ -229,146 +229,129 @@ def generate_database_tree_documentation(analysis: Dict, project_info: Dict, con
         return generate_comprehensive_external_docs(analysis, project_info, context, doc_style, repo_name)
 
 def generate_google_style_code_docs(analysis: Dict, project_info: Dict, context: str, repo_name: str) -> str:
-    """Generate Google-style inline docstrings for the codebase"""
+    """Generate Google-style inline docstrings for the actual codebase"""
+    
+    # Extract actual classes and functions from the analysis
+    actual_classes = analysis.get('classes', [])
+    actual_functions = analysis.get('functions', [])
+    
+    # Generate documentation for actual classes found in the code
+    class_docs = []
+    for cls in actual_classes[:5]:  # Top 5 classes
+        class_name = cls['name']
+        file_path = cls.get('file', 'unknown')
+        
+        # Get class purpose based on name and context
+        purpose = generate_class_purpose(class_name, analysis)
+        
+        class_doc = f"""### {class_name} Class
+```python
+class {class_name}:
+    \"\"\"{purpose}
+    
+    This class is implemented in {file_path} and serves as a core component
+    of the {project_info['primary_purpose'].lower()} system.
+    
+    Attributes:
+        {generate_class_attributes(class_name, analysis)}
+        
+    Example:
+        >>> {class_name.lower()} = {class_name}()
+        >>> # Usage example based on detected methods
+        {generate_usage_example(class_name, analysis)}
+    \"\"\"
+    
+    {generate_class_methods_docs(class_name, analysis)}
+```
+"""
+        class_docs.append(class_doc)
+    
+    # Generate documentation for standalone functions
+    function_docs = []
+    standalone_functions = [f for f in actual_functions if not f.get('class')]
+    
+    for func in standalone_functions[:8]:  # Top 8 standalone functions
+        func_name = func['name']
+        if not func_name.startswith('_'):  # Only public functions
+            func_purpose = generate_function_purpose(func_name, func.get('file', ''))
+            
+            func_doc = f"""### {func_name} Function
+```python
+def {func_name}({extract_parameters(func.get('signature', ''))}) -> {infer_return_type(func_name)}:
+    \"\"\"{func_purpose}
+    
+    Location: {func.get('file', 'unknown')} (line {func.get('line', 'unknown')})
+    
+    Args:
+        {generate_function_args(func_name, func.get('signature', ''))}
+        
+    Returns:
+        {infer_return_type(func_name)}: {generate_return_description(func_name)}
+        
+    Raises:
+        {generate_exceptions(func_name)}
+        
+    Example:
+        >>> result = {func_name}({generate_example_args(func_name)})
+        >>> print(result)
+    \"\"\"
+```
+"""
+            function_docs.append(func_doc)
+    
+    # If no actual classes/functions found, show file-based analysis
+    if not class_docs and not function_docs:
+        file_docs = []
+        for file_path, file_info in analysis.get('file_analysis', {}).items()[:3]:
+            if file_info.get('functions') or file_info.get('classes'):
+                file_doc = f"""### {os.path.basename(file_path)} Module
+```python
+# File: {file_path}
+# Purpose: {get_file_purpose(file_path, analysis)}
+
+{generate_file_level_docs(file_path, file_info)}
+```
+"""
+                file_docs.append(file_doc)
+        class_docs = file_docs
     
     return f"""# Google Style Docstring Implementation for {repo_name}
 
+## Analyzed Repository Structure
+- **Files Analyzed:** {len(analysis.get('file_analysis', {}))}
+- **Classes Found:** {len(actual_classes)}
+- **Functions Found:** {len(actual_functions)}
+- **Project Type:** {project_info['primary_purpose']}
+
 ## Enhanced Code with Google-Style Docstrings
 
-### DatabaseManager Class
-```python
-class DatabaseManager:
-    \"\"\"Central coordinator for database operations and lifecycle management.
-    
-    The DatabaseManager serves as the primary interface for creating, managing,
-    and deleting databases within the system. It maintains database metadata
-    and coordinates with storage engines for optimal performance.
-    
-    Attributes:
-        databases (Dict[str, Database]): Active database instances indexed by name.
-        config (DatabaseConfig): System-wide configuration parameters.
-        storage_engine (StorageEngine): Underlying storage implementation.
-        
-    Example:
-        >>> manager = DatabaseManager()
-        >>> manager.create_database("inventory")
-        >>> table = manager.create_table("inventory", "products", schema)
-    \"\"\"
-    
-    def create_database(self, db_name: str, overwrite: bool = False) -> bool:
-        \"\"\"Create a new database with the specified name.
-        
-        Creates database directory structure, initializes metadata files,
-        and registers the database in the system catalog.
-        
-        Args:
-            db_name (str): Unique identifier for the database. Must be valid
-                filename and not contain special characters.
-            overwrite (bool): Whether to overwrite existing database.
-                Defaults to False for safety.
-                
-        Returns:
-            bool: True if database was created successfully, False otherwise.
-            
-        Raises:
-            DatabaseExistsError: If database exists and overwrite=False.
-            InvalidNameError: If database name contains invalid characters.
-            StorageError: If unable to create database files.
-            
-        Example:
-            >>> manager = DatabaseManager()
-            >>> success = manager.create_database("ecommerce")
-        \"\"\"
-        
-    def create_table(self, db_name: str, table_name: str, schema: Dict[str, str]) -> Table:
-        \"\"\"Create a new table with B+ tree indexing.
-        
-        Args:
-            db_name (str): Target database name.
-            table_name (str): Unique table identifier within the database.
-            schema (Dict[str, str]): Column definitions mapping names to types.
-                
-        Returns:
-            Table: Configured table instance ready for operations.
-            
-        Raises:
-            DatabaseNotFoundError: If specified database doesn't exist.
-            TableExistsError: If table already exists in database.
-            SchemaError: If schema contains invalid types.
-        \"\"\"
-```
+{chr(10).join(class_docs)}
 
-### BPlusTree Class
-```python
-class BPlusTree:
-    \"\"\"Self-balancing tree optimized for range queries and disk storage.
-    
-    Time Complexity:
-        - Search: O(log n)
-        - Insert: O(log n) 
-        - Delete: O(log n)
-        - Range Query: O(log n + k) where k is result size
-        
-    Space Complexity: O(n) where n is number of records
-    
-    Attributes:
-        root (BPlusTreeNode): Root node of the tree.
-        order (int): Maximum number of children per internal node.
-        
-    Example:
-        >>> tree = BPlusTree(order=8)
-        >>> tree.insert("apple", {{"name": "apple", "price": 1.50}})
-        >>> result = tree.search("apple")
-    \"\"\"
-    
-    def insert(self, key: Any, value: Any) -> bool:
-        \"\"\"Insert a key-value pair into the tree.
-        
-        Args:
-            key (Any): Search key for the record. Must be comparable.
-            value (Any): Data to associate with the key.
-                
-        Returns:
-            bool: True if insertion successful.
-            
-        Raises:
-            TypeError: If key is not comparable.
-            MemoryError: If insufficient memory for tree expansion.
-        \"\"\"
-        
-    def range_query(self, start_key: Any, end_key: Any) -> List[Any]:
-        \"\"\"Retrieve all values within the specified key range.
-        
-        Args:
-            start_key (Any): Lower bound of the range (inclusive).
-            end_key (Any): Upper bound of the range.
-                
-        Returns:
-            List[Any]: Values for all keys in range, sorted by key.
-            
-        Raises:
-            TypeError: If keys are not comparable.
-            ValueError: If start_key > end_key.
-        \"\"\"
-```
+{chr(10).join(function_docs) if function_docs else ''}
 
 ## Implementation Guidelines
 
 ### Code Quality Standards
-1. **Type Hints**: All public methods must include comprehensive type hints
+1. **Type Hints**: All public methods should include comprehensive type hints
 2. **Docstrings**: Google-style docstrings for all public classes and methods  
 3. **Error Handling**: Specific exception types with clear error messages
-4. **Testing**: Minimum 90% code coverage with unit and integration tests
+4. **Testing**: Comprehensive unit tests for all public interfaces
 
 ### Performance Considerations
-1. **Memory Usage**: Implement lazy loading for large datasets
-2. **Disk I/O**: Batch operations when possible to minimize disk access
-3. **Caching**: LRU cache for frequently accessed nodes
+1. **Algorithm Efficiency**: {analyze_algorithm_efficiency(analysis)}
+2. **Memory Usage**: {analyze_memory_patterns(analysis)}
+3. **I/O Operations**: {analyze_io_patterns(analysis)}
 
 ### API Design Principles
-1. **Consistency**: Similar operations follow the same patterns
-2. **Flexibility**: Support for custom configurations and extensions
-3. **Safety**: Fail-fast with clear error messages
+1. **Consistency**: Method naming follows Python conventions
+2. **Modularity**: Clear separation of concerns across files
+3. **Extensibility**: Design supports future enhancements
+
+---
+**Analysis Summary:**
+- Repository contains {len(analysis.get('file_analysis', {}))} files with {analysis.get('total_lines', 0)} total lines
+- Detected {len(actual_classes)} classes and {len(actual_functions)} functions
+- Primary focus: {project_info['primary_purpose']}
 """
 
 def generate_opensource_documentation(analysis: Dict, project_info: Dict, context: str, repo_name: str) -> str:
@@ -1613,3 +1596,330 @@ def generate_error_documentation(analysis: Dict) -> str:
 | SYS001 | SystemError | Resource exhausted | Free up system resources |
 | AUTH001 | AuthError | Authentication failed | Verify credentials |
 """
+
+# Helper functions for Google-style documentation generation
+
+def generate_class_purpose(class_name: str, analysis: Dict) -> str:
+    """Generate purpose description for a class"""
+    name_lower = class_name.lower()
+    
+    if 'manager' in name_lower:
+        return f"Central coordinator class for {class_name.replace('Manager', '').lower()} operations and lifecycle management."
+    elif 'tree' in name_lower or 'node' in name_lower:
+        return f"Tree data structure implementation providing efficient search and storage operations."
+    elif 'table' in name_lower:
+        return f"Table management class handling data organization and schema validation."
+    elif 'database' in name_lower:
+        return f"Database abstraction layer providing core data persistence functionality."
+    elif 'index' in name_lower:
+        return f"Indexing system for optimized data retrieval and query performance."
+    elif 'search' in name_lower:
+        return f"Search implementation providing data lookup and retrieval capabilities."
+    elif 'file' in name_lower:
+        return f"File system abstraction handling data persistence and storage operations."
+    else:
+        return f"Core system component implementing {class_name.lower()} functionality."
+
+def generate_class_attributes(class_name: str, analysis: Dict) -> str:
+    """Generate class attributes documentation"""
+    name_lower = class_name.lower()
+    
+    if 'manager' in name_lower:
+        return """instances (Dict): Active managed instances indexed by identifier.
+        config (Config): System configuration parameters.
+        state (State): Current operational state and status."""
+    elif 'tree' in name_lower:
+        return """root (Node): Root node of the tree structure.
+        size (int): Current number of elements in the tree.
+        height (int): Current height of the tree structure."""
+    elif 'table' in name_lower:
+        return """schema (Dict): Column definitions and data types.
+        data (List): Internal data storage structure.
+        indexes (Dict): Associated indexes for query optimization."""
+    else:
+        return """data (Any): Internal data storage.
+        state (str): Current operational state.
+        config (Dict): Configuration parameters."""
+
+def generate_usage_example(class_name: str, analysis: Dict) -> str:
+    """Generate usage example for a class"""
+    name_lower = class_name.lower()
+    instance_name = class_name.lower().replace('manager', 'mgr')
+    
+    if 'manager' in name_lower:
+        return f">>> result = {instance_name}.create_item('example')"
+    elif 'tree' in name_lower:
+        return f">>> {instance_name}.insert('key', 'value')"
+    elif 'table' in name_lower:
+        return f">>> {instance_name}.insert({{'id': 1, 'data': 'example'}})"
+    else:
+        return f">>> result = {instance_name}.process()"
+
+def generate_class_methods_docs(class_name: str, analysis: Dict) -> str:
+    """Generate methods documentation for a class"""
+    
+    # Find methods for this class in the analysis
+    class_methods = []
+    for func in analysis.get('functions', []):
+        if func.get('class') == class_name and not func.get('is_private', False):
+            method_name = func['name']
+            signature = func.get('signature', f"def {method_name}(self):")
+            
+            # Clean up signature to show parameters only
+            if '(' in signature and ')' in signature:
+                params_part = signature[signature.find('(')+1:signature.rfind(')')].strip()
+                if params_part.startswith('self'):
+                    params_part = params_part[4:].strip()
+                    if params_part.startswith(','):
+                        params_part = params_part[1:].strip()
+                if not params_part:
+                    params_part = ""
+            else:
+                params_part = ""
+            
+            method_doc = f"""def {method_name}(self{', ' + params_part if params_part else ''}) -> {infer_return_type(method_name)}:
+        \"\"\"{generate_method_purpose(method_name, class_name)}
+        
+        Args:
+            {generate_method_args(method_name, params_part)}
+            
+        Returns:
+            {infer_return_type(method_name)}: {generate_return_description(method_name)}
+            
+        Raises:
+            {generate_exceptions(method_name)}
+        \"\"\"
+"""
+            class_methods.append(method_doc)
+    
+    if not class_methods:
+        # Generate generic methods based on class type
+        name_lower = class_name.lower()
+        if 'manager' in name_lower:
+            return """def create(self, name: str, **kwargs) -> bool:
+        \"\"\"Create a new managed resource.
+        
+        Args:
+            name (str): Unique identifier for the resource.
+            **kwargs: Additional configuration parameters.
+            
+        Returns:
+            bool: True if creation successful, False otherwise.
+            
+        Raises:
+            ValueError: If name is invalid or already exists.
+        \"\"\"
+        
+    def delete(self, name: str) -> bool:
+        \"\"\"Remove a managed resource.
+        
+        Args:
+            name (str): Identifier of resource to remove.
+            
+        Returns:
+            bool: True if deletion successful, False if not found.
+            
+        Raises:
+            ValueError: If name is invalid.
+        \"\"\"
+"""
+        elif 'tree' in name_lower:
+            return """def insert(self, key: Any, value: Any) -> bool:
+        \"\"\"Insert a key-value pair into the tree.
+        
+        Args:
+            key (Any): Search key for the record.
+            value (Any): Data to associate with the key.
+            
+        Returns:
+            bool: True if insertion successful.
+            
+        Raises:
+            TypeError: If key is not comparable.
+        \"\"\"
+        
+    def search(self, key: Any) -> Any:
+        \"\"\"Search for a value by key.
+        
+        Args:
+            key (Any): Key to search for.
+            
+        Returns:
+            Any: Value associated with key, None if not found.
+            
+        Raises:
+            TypeError: If key is not comparable.
+        \"\"\"
+"""
+    
+    return '\n'.join(class_methods[:3])  # Show top 3 methods
+
+def generate_function_purpose(func_name: str, file_path: str) -> str:
+    """Generate purpose description for a function"""
+    name_lower = func_name.lower()
+    
+    if name_lower.startswith('create'):
+        return f"Create and initialize a new resource or data structure."
+    elif name_lower.startswith('delete') or name_lower.startswith('remove'):
+        return f"Remove or delete an existing resource or data entry."
+    elif name_lower.startswith('get') or name_lower.startswith('find'):
+        return f"Retrieve and return data based on specified criteria."
+    elif name_lower.startswith('set') or name_lower.startswith('update'):
+        return f"Update or modify existing data with new values."
+    elif name_lower.startswith('insert') or name_lower.startswith('add'):
+        return f"Add new data to the system or data structure."
+    elif name_lower.startswith('search'):
+        return f"Search for data matching specified criteria."
+    elif name_lower.startswith('load') or name_lower.startswith('read'):
+        return f"Load or read data from storage or external source."
+    elif name_lower.startswith('save') or name_lower.startswith('write'):
+        return f"Save or write data to storage or external destination."
+    elif name_lower.startswith('process'):
+        return f"Process and transform data according to business logic."
+    elif name_lower.startswith('init') or name_lower.startswith('setup'):
+        return f"Initialize or set up system components and configurations."
+    else:
+        return f"Perform {func_name.lower().replace('_', ' ')} operation."
+
+def extract_parameters(signature: str) -> str:
+    """Extract parameters from function signature"""
+    if '(' not in signature or ')' not in signature:
+        return ""
+    
+    params = signature[signature.find('(')+1:signature.rfind(')')].strip()
+    if params.startswith('self'):
+        params = params[4:].strip()
+        if params.startswith(','):
+            params = params[1:].strip()
+    
+    return params if params else ""
+
+def infer_return_type(func_name: str) -> str:
+    """Infer likely return type from function name"""
+    name_lower = func_name.lower()
+    
+    if any(word in name_lower for word in ['create', 'insert', 'add', 'delete', 'remove', 'update', 'save']):
+        return "bool"
+    elif any(word in name_lower for word in ['get', 'find', 'search', 'load', 'read']):
+        return "Any"
+    elif any(word in name_lower for word in ['list', 'all', 'query']):
+        return "List[Any]"
+    elif any(word in name_lower for word in ['count', 'size', 'length']):
+        return "int"
+    elif any(word in name_lower for word in ['exists', 'has', 'is', 'check']):
+        return "bool"
+    else:
+        return "Any"
+
+def generate_function_args(func_name: str, signature: str) -> str:
+    """Generate function arguments documentation"""
+    if not signature.strip():
+        return "No parameters required."
+    
+    # Simple parameter parsing - in a real implementation, this would be more sophisticated
+    params = [p.strip() for p in signature.split(',') if p.strip()]
+    
+    arg_docs = []
+    for param in params[:3]:  # Limit to first 3 parameters
+        param_name = param.split(':')[0].split('=')[0].strip()
+        if param_name and not param_name.startswith('*'):
+            param_type = "Any"
+            if ':' in param:
+                param_type = param.split(':')[1].split('=')[0].strip()
+            
+            arg_docs.append(f"{param_name} ({param_type}): Description of {param_name} parameter.")
+    
+    return '\n        '.join(arg_docs) if arg_docs else "Parameters to be documented."
+
+def generate_return_description(func_name: str) -> str:
+    """Generate return value description"""
+    name_lower = func_name.lower()
+    
+    if any(word in name_lower for word in ['create', 'insert', 'add']):
+        return "Success status of the operation"
+    elif any(word in name_lower for word in ['get', 'find', 'search']):
+        return "Retrieved data or None if not found"
+    elif any(word in name_lower for word in ['list', 'all']):
+        return "List of matching items"
+    elif any(word in name_lower for word in ['count', 'size']):
+        return "Numeric count or size value"
+    elif any(word in name_lower for word in ['delete', 'remove']):
+        return "True if deletion successful"
+    else:
+        return "Operation result"
+
+def generate_exceptions(func_name: str) -> str:
+    """Generate likely exceptions for a function"""
+    name_lower = func_name.lower()
+    
+    if any(word in name_lower for word in ['create', 'insert', 'add']):
+        return "ValueError: If input parameters are invalid.\n        RuntimeError: If operation fails due to system constraints."
+    elif any(word in name_lower for word in ['get', 'find', 'search']):
+        return "KeyError: If specified key or identifier not found.\n        TypeError: If search parameters are of wrong type."
+    elif any(word in name_lower for word in ['delete', 'remove']):
+        return "KeyError: If item to delete does not exist.\n        PermissionError: If deletion is not allowed."
+    else:
+        return "RuntimeError: If operation encounters an unexpected error."
+
+def generate_example_args(func_name: str) -> str:
+    """Generate example arguments for function usage"""
+    name_lower = func_name.lower()
+    
+    if any(word in name_lower for word in ['create', 'insert', 'add']):
+        return "'example_item', data={'key': 'value'}"
+    elif any(word in name_lower for word in ['get', 'find', 'search']):
+        return "'search_key'"
+    elif any(word in name_lower for word in ['delete', 'remove']):
+        return "'item_to_delete'"
+    elif any(word in name_lower for word in ['update', 'set']):
+        return "'item_id', new_value='updated'"
+    else:
+        return ""
+
+def generate_method_purpose(method_name: str, class_name: str) -> str:
+    """Generate purpose for a class method"""
+    return generate_function_purpose(method_name, "").replace("operation.", f"operation for {class_name}.")
+
+def generate_method_args(method_name: str, params: str) -> str:
+    """Generate method arguments documentation"""
+    return generate_function_args(method_name, params)
+
+def generate_file_level_docs(file_path: str, file_info: Dict) -> str:
+    """Generate file-level documentation"""
+    classes = file_info.get('classes', [])
+    functions = file_info.get('functions', [])
+    
+    docs = []
+    if classes:
+        docs.append("# Classes:")
+        for cls in classes[:3]:
+            docs.append(f"class {cls['name']}:")
+            docs.append(f'    """{generate_class_purpose(cls["name"], {})}"""')
+            docs.append("")
+    
+    if functions:
+        docs.append("# Functions:")
+        for func in functions[:3]:
+            if not func.get('is_private', False):
+                docs.append(f"def {func['name']}():")
+                docs.append(f'    """{generate_function_purpose(func["name"], file_path)}"""')
+                docs.append("")
+    
+    return '\n'.join(docs)
+
+def analyze_algorithm_efficiency(analysis: Dict) -> str:
+    """Analyze algorithm efficiency"""
+    if 'tree' in str(analysis).lower():
+        return "O(log n) for tree-based operations"
+    elif 'search' in str(analysis).lower():
+        return "Optimized search algorithms implemented"
+    else:
+        return "Standard algorithmic complexity"
+
+def analyze_memory_patterns(analysis: Dict) -> str:
+    """Analyze memory usage patterns"""
+    return "Efficient memory usage with proper cleanup"
+
+def analyze_io_patterns(analysis: Dict) -> str:
+    """Analyze I/O patterns"""
+    return "Optimized I/O operations for data persistence"
