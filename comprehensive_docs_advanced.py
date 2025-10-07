@@ -585,262 +585,515 @@ class DocumentationGenerator:
             return self._generate_comprehensive_style(analysis, context, repo_name)
     
     def _generate_google_style(self, analysis: Dict[str, Any], context: str, repo_name: str) -> str:
-        """Generate Google-style documentation with proper formatting"""
+        """Generate Google-style inline documentation focusing on code walkthrough"""
         
-        repo_name = repo_name or 'Repository'
+        repo_name = repo_name or analysis.get('repo_name', 'Unknown Repository')
         project_type = analysis['project_type'].replace('_', ' ').title()
         
-        doc = f"""# {repo_name}
+        # Generate comprehensive project understanding
+        purpose = self._infer_project_purpose(analysis, context)
+        main_workflow = self._trace_execution_flow(analysis)
+        
+        doc = f"""# {repo_name} - Code Walkthrough & Implementation Guide
 
-{context}
+## 🎯 What This Project Does
 
-## Overview
+{purpose}
 
-This is a {project_type.lower()} built with {', '.join(analysis['key_technologies']) if analysis['key_technologies'] else 'Python'}.
+**Primary Purpose:** {self._get_project_summary(analysis)}
+**Architecture:** {project_type} with {len(analysis['file_analysis'])} modules
+**Key Technologies:** {', '.join(analysis['key_technologies']) if analysis['key_technologies'] else 'Pure Python'}
 
-### Project Statistics
-- **Files:** {analysis['total_files']} Python files
-- **Functions:** {analysis['complexity_metrics']['total_functions']}
-- **Classes:** {analysis['complexity_metrics']['total_classes']}
-- **Lines of Code:** {analysis['total_lines']}
-- **Documentation Coverage:** {analysis['quality_metrics']['documentation_coverage']:.1f}%
+## 🔄 Execution Flow & Code Walkthrough
 
-## Architecture
+{main_workflow}
 
-### Project Structure
+## 📁 File-by-File Code Analysis
+
 """
         
-        # Add file structure with proper Google-style documentation
+        # Deep dive into each file with inline code documentation
         for file_path, file_info in analysis['file_analysis'].items():
             if file_info['functions'] or file_info['classes']:
-                doc += f"\n### `{file_path}`\n\n"
+                doc += f"### 📄 `{file_path}` - {self._get_file_purpose(file_info, analysis)}\n\n"
+                doc += f"**Role:** {self._analyze_file_role(file_info, analysis)}\n\n"
                 
+                # Show imports and their purpose
+                if file_info['imports']:
+                    doc += "**Dependencies & Their Usage:**\n"
+                    for imp in file_info['imports'][:8]:
+                        purpose = self._explain_import_purpose(imp, file_info)
+                        doc += f"- `{imp}` → {purpose}\n"
+                    doc += "\n"
+                
+                # Detailed function analysis with code purpose
                 if file_info['classes']:
-                    doc += "**Classes:**\n\n"
                     for cls in file_info['classes']:
-                        doc += f"#### class `{cls.name}`\n\n"
-                        if cls.docstring:
-                            doc += f"{cls.docstring}\n\n"
+                        doc += f"#### 🏗️ Class `{cls.name}`\n\n"
+                        doc += f"**Purpose:** {self._analyze_class_purpose(cls, analysis)}\n"
+                        doc += f"**When Used:** {self._explain_class_usage(cls, analysis)}\n\n"
                         
                         if cls.methods:
-                            doc += "**Methods:**\n\n"
-                            for method in cls.methods[:5]:  # Limit to first 5 methods
-                                args_str = ', '.join(method.args)
-                                doc += f"- `{method.name}({args_str})`: "
-                                doc += f"{method.docstring[:100] if method.docstring else 'Method implementation'}...\n"
+                            doc += "**Method Breakdown:**\n"
+                            for method in cls.methods[:6]:
+                                workflow = self._explain_method_workflow(method, analysis)
+                                doc += f"- `{method.name}()` → {workflow}\n"
                         doc += "\n"
                 
                 if file_info['functions']:
-                    doc += "**Functions:**\n\n"
+                    doc += "**Function Implementation Details:**\n\n"
                     for func in file_info['functions']:
-                        if not func.name.startswith('_'):  # Skip private functions
-                            args_str = ', '.join(func.args)
-                            doc += f"#### `{func.name}({args_str})`\n\n"
+                        if not func.name.startswith('_'):
+                            doc += f"#### 🔧 `{func.name}({', '.join(func.args)})`\n\n"
                             
-                            if func.docstring:
-                                doc += f"{func.docstring}\n\n"
-                            else:
-                                doc += "Function implementation.\n\n"
+                            # Explain what this function actually does
+                            explanation = self._generate_function_explanation(func, analysis)
+                            doc += f"**What it does:** {explanation}\n\n"
                             
-                            if func.return_type:
-                                doc += f"**Returns:** {func.return_type}\n\n"
+                            # Show the workflow
+                            workflow = self._trace_function_workflow(func, analysis)
+                            if workflow:
+                                doc += f"**How it works:**\n{workflow}\n\n"
+                            
+                            # Show dependencies
+                            if func.calls:
+                                doc += f"**Calls:** {', '.join(func.calls[:5])}\n"
+                            if func.called_by:
+                                doc += f"**Called by:** {', '.join(func.called_by[:3])}\n"
+                            doc += "\n"
         
-        # Add usage examples
-        doc += "\n## Usage\n\n"
-        doc += self._generate_usage_examples(analysis, project_type)
+        # Add practical usage guide
+        doc += "## 🚀 How to Use This Code\n\n"
+        doc += self._generate_detailed_usage_guide(analysis)
         
-        # Add API reference
-        doc += "\n## API Reference\n\n"
-        doc += "See the class and function documentation above for detailed API information.\n"
+        # Add troubleshooting section
+        doc += "\n## 🔧 Understanding the Code Flow\n\n"
+        doc += self._generate_code_flow_explanation(analysis)
         
         return doc
     
     def _generate_numpy_style(self, analysis: Dict[str, Any], context: str, repo_name: str) -> str:
-        """Generate NumPy-style documentation"""
+        """Generate NumPy-style documentation with visual diagrams and scientific structure"""
         
-        repo_name = repo_name or 'Repository'
+        repo_name = repo_name or analysis.get('repo_name', 'Unknown_Repository')
         
-        doc = f"""{repo_name}
+        doc = f"""
+{repo_name.upper()}
 {'=' * len(repo_name)}
 
+SCIENTIFIC DOCUMENTATION & ANALYSIS REPORT
+
+Synopsis
+--------
 {context}
 
-Parameters
-----------
-project_type : str
-    {analysis['project_type'].replace('_', ' ').title()}
-technologies : list
-    {analysis['key_technologies']}
-files : int
-    {analysis['total_files']} Python files analyzed
+System Architecture
+-------------------
+┌─ PROJECT SPECIFICATION ─┐
+│ Type      : {analysis['project_type'].replace('_', ' ').title():<20} │
+│ Files     : {analysis['total_files']:<20} │  
+│ Functions : {analysis['complexity_metrics']['total_functions']:<20} │
+│ Classes   : {analysis['complexity_metrics']['total_classes']:<20} │
+│ LOC       : {analysis['total_lines']:<20} │
+│ Quality   : {analysis['quality_metrics']['documentation_coverage']:.1f}% documented{' ':<8} │
+└─────────────────────────────┘
 
-Returns
--------
-documentation : str
-    Comprehensive NumPy-style documentation
-
-Notes
------
-This project contains {analysis['complexity_metrics']['total_functions']} functions 
-and {analysis['complexity_metrics']['total_classes']} classes with 
-{analysis['quality_metrics']['documentation_coverage']:.1f}% documentation coverage.
-
-Examples
---------
+Technology Stack Matrix
+------------------------
 """
         
-        doc += self._generate_usage_examples(analysis, analysis['project_type'])
+        # Create visual technology matrix
+        if analysis['key_technologies']:
+            for i, tech in enumerate(analysis['key_technologies'], 1):
+                doc += f"[{i:2d}] {tech}\n"
+        else:
+            doc += "[01] Python Standard Library\n"
         
-        # Add function signatures in NumPy style
-        doc += "\n\nAPI Reference\n-------------\n\n"
+        doc += f"""
+
+Computational Complexity Analysis
+----------------------------------
+┌─ COMPLEXITY METRICS ─────────────────────────────────────┐
+│                                                          │
+│  Average Function Complexity: {analysis['complexity_metrics']['average_function_complexity']:>6.1f}                    │
+│  Maximum Complexity Found:    {analysis['complexity_metrics']['max_complexity']:>6d}                      │ 
+│  Functions per Module:        {analysis['quality_metrics']['functions_per_file']:>6.1f}                    │
+│  Code Distribution Score:     {self._calculate_distribution_score(analysis):>6.1f}                    │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+
+Dependency Graph Visualization
+-------------------------------
+"""
         
+        # Generate ASCII dependency visualization
+        doc += self._generate_ascii_dependency_graph(analysis)
+        
+        doc += """
+
+Function Signature Specifications
+----------------------------------
+"""
+        
+        # Detailed function documentation in scientific format
         for file_path, file_info in analysis['file_analysis'].items():
-            if file_info['functions']:
-                doc += f"{file_path}\n{'-' * len(file_path)}\n\n"
+            if file_info['functions'] or file_info['classes']:
+                doc += f"\n{file_path.upper()}\n{'-' * len(file_path)}\n"
                 
-                for func in file_info['functions'][:10]:  # Limit to first 10
-                    if not func.name.startswith('_'):
-                        doc += f"{func.name}({', '.join(func.args)})\n"
-                        if func.docstring:
-                            doc += f"    {func.docstring[:100]}...\n"
-                        doc += "\n"
+                # Module purpose
+                module_purpose = self._analyze_module_purpose(file_info, analysis)
+                doc += f"Purpose: {module_purpose}\n\n"
+                
+                if file_info['classes']:
+                    for cls in file_info['classes']:
+                        doc += f"class {cls.name}\n"
+                        doc += f"{'~' * (6 + len(cls.name))}\n\n"
+                        doc += f"Attributes\n----------\n"
+                        for attr in cls.attributes[:5]:
+                            doc += f"{attr} : type\n    Class attribute\n"
+                        
+                        doc += f"\nMethods\n-------\n"
+                        for method in cls.methods[:8]:
+                            args_str = ', '.join(method.args) if method.args else ''
+                            doc += f"{method.name}({args_str})\n"
+                            if method.docstring:
+                                doc += f"    {method.docstring[:80]}...\n"
+                            if method.return_type:
+                                doc += f"    Returns: {method.return_type}\n"
+                            doc += f"    Complexity: {method.complexity}\n\n"
+                
+                if file_info['functions']:
+                    for func in file_info['functions']:
+                        if not func.name.startswith('_'):
+                            doc += f"{func.name}({', '.join(func.args) if func.args else ''})\n"
+                            doc += f"{'~' * (len(func.name) + 2 + len(', '.join(func.args) if func.args else ''))}\n\n"
+                            
+                            # Parameters section
+                            if func.args:
+                                doc += f"Parameters\n----------\n"
+                                for arg in func.args:
+                                    doc += f"{arg} : type\n    Parameter description\n"
+                                doc += "\n"
+                            
+                            # Returns section
+                            if func.return_type:
+                                doc += f"Returns\n-------\n"
+                                doc += f"result : {func.return_type}\n    Return value description\n\n"
+                            
+                            # Function properties
+                            doc += f"Properties\n----------\n"
+                            doc += f"Complexity Score    : {func.complexity}\n"
+                            doc += f"Semantic Category   : {func.semantic_category}\n"
+                            if func.calls:
+                                doc += f"Function Calls      : {len(func.calls)} dependencies\n"
+                            doc += "\n"
+        
+        # Add performance analysis
+        doc += """
+Performance Characteristics
+----------------------------
+"""
+        doc += self._generate_performance_analysis(analysis)
+        
+        # Add visual examples section
+        doc += """
+
+Examples & Workflow Diagrams
+-----------------------------
+"""
+        doc += self._generate_visual_examples(analysis)
         
         return doc
     
     def _generate_technical_markdown(self, analysis: Dict[str, Any], context: str, repo_name: str) -> str:
-        """Generate technical markdown documentation"""
+        """Generate comprehensive technical documentation with deep analysis"""
         
-        repo_name = repo_name or 'Repository'
+        repo_name = repo_name or analysis.get('repo_name', 'Technical_Project')
         
-        doc = f"""# {repo_name} - Technical Documentation
+        # Deep technical analysis
+        architecture_summary = self._generate_architecture_summary(analysis)
+        security_analysis = self._analyze_security_aspects(analysis)
+        performance_insights = self._analyze_performance_characteristics(analysis)
+        
+        doc = f"""# {repo_name} - Comprehensive Technical Documentation
 
-## 📋 Executive Summary
+## 🎯 Executive Technical Summary
 
-**Project Type:** {analysis['project_type'].replace('_', ' ').title()}  
-**Context:** {context}  
-**Primary Technologies:** {', '.join(analysis['key_technologies']) if analysis['key_technologies'] else 'Python Standard Library'}
+**What This System Does:** {self._generate_system_purpose(analysis, context)}
 
-## 📊 Codebase Metrics
+**Architecture Type:** {analysis['project_type'].replace('_', ' ').title()}  
+**Technical Context:** {context}  
+**Core Technologies:** {', '.join(analysis['key_technologies']) if analysis['key_technologies'] else 'Python Standard Library'}  
+**Deployment Target:** {self._infer_deployment_target(analysis)}
 
-| Metric | Value |
-|--------|-------|
-| Total Files | {analysis['total_files']} |
-| Total Functions | {analysis['complexity_metrics']['total_functions']} |
-| Total Classes | {analysis['complexity_metrics']['total_classes']} |
-| Lines of Code | {analysis['total_lines']:,} |
-| Avg Function Complexity | {analysis['complexity_metrics']['average_function_complexity']:.1f} |
-| Documentation Coverage | {analysis['quality_metrics']['documentation_coverage']:.1f}% |
+## 🏗️ System Architecture
 
-## 🏗️ Architecture Overview
+### High-Level Design
+```
+{self._generate_ascii_architecture_diagram(analysis)}
+```
 
-### Dependency Graph
+{architecture_summary}
+
+### � Entry Points & Execution Flow
+{self._map_execution_flow(analysis)}
+
+## 📊 Technical Metrics & Analysis
+
+### Code Quality Metrics
+| Metric | Value | Assessment | Recommendation |
+|--------|-------|------------|----------------|
+| **Cyclomatic Complexity** | Avg: {analysis['complexity_metrics']['average_function_complexity']:.1f}, Max: {analysis['complexity_metrics']['max_complexity']} | {self._assess_complexity(analysis)} | {self._recommend_complexity_improvement(analysis)} |
+| **Documentation Coverage** | {analysis['quality_metrics']['documentation_coverage']:.1f}% | {self._assess_documentation(analysis)} | {self._recommend_documentation_improvement(analysis)} |
+| **Code Distribution** | {analysis['quality_metrics']['functions_per_file']:.1f} functions/file | {self._assess_distribution(analysis)} | {self._recommend_distribution_improvement(analysis)} |
+| **Dependency Coupling** | {len(analysis['call_graph']['edges'])} connections | {self._assess_coupling(analysis)} | {self._recommend_coupling_improvement(analysis)} |
+
+### 🔍 Detailed Module Analysis
+
+{self._generate_detailed_module_analysis(analysis)}
+
+## 🔐 Security Analysis
+
+{security_analysis}
+
+## ⚡ Performance Characteristics
+
+{performance_insights}
+
+## 🗂️ Data Flow & State Management
+
+### Data Structures Used
+{self._analyze_data_structures(analysis)}
+
+### State Management Pattern
+{self._analyze_state_management(analysis)}
+
+### Memory Usage Patterns
+{self._analyze_memory_patterns(analysis)}
+
+## 🔧 Technical Implementation Details
+
+### Design Patterns Identified
+{self._identify_design_patterns(analysis)}
+
+### Error Handling Strategy
+{self._analyze_error_handling(analysis)}
+
+### Configuration Management
+{self._analyze_configuration_approach(analysis)}
+
+## 🚀 Deployment & Operations
+
+### System Requirements
+{self._generate_system_requirements(analysis)}
+
+### Deployment Architecture
+{self._suggest_deployment_architecture(analysis)}
+
+### Monitoring & Observability
+{self._suggest_monitoring_strategy(analysis)}
+
+## 🔬 Code Deep Dive
+
+### Function Complexity Heatmap
+{self._generate_complexity_heatmap(analysis)}
+
+### Dependency Graph Analysis
+{self._analyze_dependency_relationships(analysis)}
+
+### Critical Path Analysis
+{self._identify_critical_paths(analysis)}
+
+## 🛠️ Development & Maintenance
+
+### Technical Debt Assessment
+{self._assess_technical_debt(analysis)}
+
+### Refactoring Opportunities
+{self._identify_refactoring_opportunities(analysis)}
+
+### Testing Strategy Recommendations
+{self._recommend_testing_strategy(analysis)}
+
+## 📈 Scalability & Future Considerations
+
+### Current Limitations
+{self._identify_current_limitations(analysis)}
+
+### Scalability Bottlenecks
+{self._identify_scalability_issues(analysis)}
+
+### Evolution Roadmap
+{self._suggest_technical_evolution(analysis)}
+
+## 🎛️ Configuration & Environment
+
+### Environment Variables
+{self._identify_environment_dependencies(analysis)}
+
+### External Dependencies
+{self._analyze_external_dependencies(analysis)}
+
+### Runtime Configuration
+{self._analyze_runtime_configuration(analysis)}
+
+---
+
+*This technical documentation provides a comprehensive analysis of the system architecture, implementation details, and operational characteristics. It should be updated as the system evolves.*
 """
-        
-        # Add dependency information
-        if analysis['call_graph']['edges']:
-            doc += f"\n**Inter-function Dependencies:** {len(analysis['call_graph']['edges'])} connections identified\n\n"
-        
-        # Add detailed file analysis
-        doc += "### File-by-File Analysis\n\n"
-        
-        for file_path, file_info in analysis['file_analysis'].items():
-            doc += f"#### `{file_path}`\n\n"
-            doc += f"- **Lines:** {file_info['lines']}\n"
-            doc += f"- **Functions:** {len(file_info['functions'])}\n"
-            doc += f"- **Classes:** {len(file_info['classes'])}\n"
-            doc += f"- **Imports:** {len(file_info['imports'])}\n\n"
-            
-            if file_info['imports']:
-                doc += "**Key Dependencies:**\n"
-                for imp in file_info['imports'][:5]:
-                    doc += f"- `{imp}`\n"
-                doc += "\n"
-        
-        # Add complexity analysis
-        doc += "## 🔍 Complexity Analysis\n\n"
-        
-        high_complexity_functions = []
-        for file_info in analysis['file_analysis'].values():
-            for func in file_info['functions']:
-                if func.complexity > 10:
-                    high_complexity_functions.append((func.name, func.complexity, func.file_path))
-        
-        if high_complexity_functions:
-            doc += "**High Complexity Functions (>10):**\n\n"
-            for name, complexity, file_path in sorted(high_complexity_functions, key=lambda x: x[1], reverse=True)[:10]:
-                doc += f"- `{name}` in `{file_path}`: Complexity {complexity}\n"
-        else:
-            doc += "✅ All functions have reasonable complexity (≤10)\n"
-        
-        doc += "\n## 🚀 Usage Guide\n\n"
-        doc += self._generate_usage_examples(analysis, analysis['project_type'])
         
         return doc
     
     def _generate_opensource_style(self, analysis: Dict[str, Any], context: str, repo_name: str) -> str:
-        """Generate open-source project documentation"""
+        """Generate comprehensive open-source contributor and maintainer documentation"""
         
-        repo_name = repo_name or 'Repository'
+        repo_name = repo_name or analysis.get('repo_name', 'opensource-project')
+        github_url = f"https://github.com/username/{repo_name.lower().replace('_', '-')}"
+        
+        # Analyze code health
+        maintainability_score = self._calculate_maintainability_score(analysis)
+        complexity_health = "🟢 Healthy" if analysis['complexity_metrics']['average_function_complexity'] < 7 else "🟡 Moderate" if analysis['complexity_metrics']['average_function_complexity'] < 15 else "🔴 Complex"
         
         doc = f"""# {repo_name}
 
-[![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://python.org)
-[![Code Quality](https://img.shields.io/badge/code%20quality-{int(analysis['quality_metrics']['documentation_coverage'])}%25-{'green' if analysis['quality_metrics']['documentation_coverage'] > 70 else 'orange'})](.)
-[![Functions](https://img.shields.io/badge/functions-{analysis['complexity_metrics']['total_functions']}-blue)](.)
+[![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://python.org)
+[![Code Health](https://img.shields.io/badge/code%20health-{maintainability_score:.0f}%25-{'green' if maintainability_score > 75 else 'yellow' if maintainability_score > 50 else 'red'}.svg)](.)
+[![Contributors Welcome](https://img.shields.io/badge/contributors-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![Complexity](https://img.shields.io/badge/complexity-{complexity_health.split()[-1].lower()}-{'green' if complexity_health.startswith('🟢') else 'yellow' if complexity_health.startswith('🟡') else 'red'}.svg)](.)
 
-> {context}
+> **{context}**
 
-## 🚀 Features
+## 🎯 Project Mission
 
-- **{analysis['complexity_metrics']['total_functions']} Functions** for comprehensive functionality
-- **{analysis['complexity_metrics']['total_classes']} Classes** with object-oriented design
-- **{', '.join(analysis['key_technologies']) if analysis['key_technologies'] else 'Pure Python'}** technology stack
-- **{analysis['quality_metrics']['documentation_coverage']:.0f}% Documentation** coverage
+{self._generate_project_mission(analysis, context)}
 
-## 📦 Installation
+### 📊 Project Health Dashboard
 
+| Metric | Status | Details |
+|--------|---------|---------|
+| **Code Quality** | {complexity_health} | Avg complexity: {analysis['complexity_metrics']['average_function_complexity']:.1f} |
+| **Documentation** | {"🟢 Well Documented" if analysis['quality_metrics']['documentation_coverage'] > 70 else "🟡 Needs Docs" if analysis['quality_metrics']['documentation_coverage'] > 40 else "🔴 Poor Docs"} | {analysis['quality_metrics']['documentation_coverage']:.1f}% coverage |
+| **Maintainability** | {"🟢 Easy" if maintainability_score > 75 else "🟡 Moderate" if maintainability_score > 50 else "🔴 Hard"} | {maintainability_score:.0f}% maintainable |
+| **Test Coverage** | {"� Good" if self._has_tests(analysis) else "🔴 Missing"} | {self._count_test_functions(analysis)} test functions found |
+
+## 🚀 Quick Start for Contributors
+
+### Prerequisites
 ```bash
-git clone <repository-url>
-cd {repo_name.lower()}
-pip install -r requirements.txt
+python >= 3.8
+git
 ```
 
-## 🎯 Quick Start
+### Development Setup
+```bash
+# 1. Fork and clone
+git clone {github_url}
+cd {repo_name}
 
-{self._generate_usage_examples(analysis, analysis['project_type'])}
+# 2. Setup development environment
+python -m venv venv
+source venv/bin/activate  # Windows: venv\\Scripts\\activate
 
-## 📚 Documentation
+# 3. Install dependencies
+pip install -e ".[dev]"  # Install in development mode
 
-### Core Components
+# 4. Run tests
+python -m pytest tests/
 
-"""
-        
-        # Add component documentation
-        for file_path, file_info in list(analysis['file_analysis'].items())[:5]:  # Top 5 files
-            if file_info['classes'] or file_info['functions']:
-                doc += f"#### {os.path.basename(file_path)}\n\n"
-                
-                if file_info['classes']:
-                    for cls in file_info['classes'][:3]:
-                        doc += f"**`{cls.name}`** - {cls.docstring[:100] if cls.docstring else 'Core class implementation'}...\n\n"
-                
-                if file_info['functions']:
-                    public_functions = [f for f in file_info['functions'] if not f.name.startswith('_')][:3]
-                    for func in public_functions:
-                        doc += f"**`{func.name}()`** - {func.docstring[:100] if func.docstring else 'Function implementation'}...\n\n"
-        
-        doc += """
-## 🤝 Contributing
+# 5. Start development server (if applicable)
+{self._generate_dev_start_command(analysis)}
+```
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
+## 🏗️ Architecture for Contributors
 
-## 📄 License
+### � Codebase Structure
+```
+{repo_name}/
+{self._generate_directory_tree(analysis)}
+```
 
-This project is licensed under the MIT License.
+### 🧩 Module Responsibilities
+
+{self._generate_module_guide(analysis)}
+
+## 🔧 Contributing Guidelines
+
+### 🎯 Areas Needing Contribution
+
+{self._identify_contribution_areas(analysis)}
+
+### 📝 Coding Standards
+
+```python
+# Follow these patterns observed in the codebase:
+
+{self._generate_coding_standards(analysis)}
+```
+
+### 🧪 Testing Guidelines
+
+{self._generate_testing_guidelines(analysis)}
+
+### 📊 Code Complexity Guidelines
+
+- **Maximum function complexity:** 15 (current max: {analysis['complexity_metrics']['max_complexity']})
+- **Preferred complexity:** Under 7 (current avg: {analysis['complexity_metrics']['average_function_complexity']:.1f})
+- **Documentation required for:** Functions > 10 complexity
+
+## 🐛 Common Issues & Solutions
+
+### Known Issues
+{self._identify_potential_issues(analysis)}
+
+### Debugging Guide
+{self._generate_debugging_guide(analysis)}
+
+## 🔄 Release Process
+
+### Version Management
+- Current version: Inferred from codebase analysis
+- Release frequency: Based on contribution activity
+- Breaking changes: Follow semantic versioning
+
+### 📋 Maintainer Checklist
+
+{self._generate_maintainer_checklist(analysis)}
+
+## 📈 Roadmap & Vision
+
+### Current State
+- **Maturity Level:** {self._assess_project_maturity(analysis)}
+- **Primary Focus:** {analysis['project_type'].replace('_', ' ').title()}
+- **Technology Stack:** {', '.join(analysis['key_technologies']) if analysis['key_technologies'] else 'Pure Python'}
+
+### Growth Opportunities
+{self._suggest_growth_areas(analysis)}
+
+## 🤝 Community
+
+### How to Get Help
+1. **Check Documentation:** Start with this README
+2. **Search Issues:** Look for existing solutions
+3. **Ask Questions:** Create a new issue with `question` label
+4. **Join Discussions:** Participate in project discussions
+
+### Recognition
+We appreciate all contributors! Contributors will be recognized in:
+- README contributors section
+- Release notes
+- Project website (if applicable)
+
+## 📄 License & Legal
+
+**License:** MIT (recommended for open source)
+**Copyright:** Contributors and maintainers
+**Patents:** No known patent issues
+
+---
+
+**Made with ❤️ by the open source community**
+
+*This documentation was generated automatically and reflects the current state of the codebase. Please update as the project evolves.*
 """
         
         return doc
@@ -988,6 +1241,1003 @@ This {analysis['project_type'].replace('_', ' ')} provides the following API:
         doc += "\n---\n\n*Generated by Advanced Repository Documentation Generator with CodeSearchNet integration*"
         
         return doc
+    
+    # Helper methods for enhanced documentation styles
+    def _infer_project_purpose(self, analysis: Dict[str, Any], context: str) -> str:
+        """Infer what the project actually does based on code analysis"""
+        project_type = analysis['project_type']
+        technologies = analysis['key_technologies']
+        
+        if 'web' in project_type.lower():
+            if 'FastAPI' in technologies or 'Flask' in technologies:
+                return f"This is a web API/service built with {', '.join(technologies)}. {context}"
+            return f"This appears to be a web application. {context}"
+        elif 'data' in project_type.lower():
+            return f"This is a data analysis/science project using {', '.join(technologies)}. {context}"
+        elif 'cli' in project_type.lower():
+            return f"This is a command-line tool. {context}"
+        else:
+            return f"This is a {project_type.replace('_', ' ')} project. {context}"
+    
+    def _trace_execution_flow(self, analysis: Dict[str, Any]) -> str:
+        """Trace the main execution flow of the application"""
+        entry_points = analysis.get('entry_points', [])
+        if entry_points:
+            flow = "**Main Execution Path:**\n"
+            for entry in entry_points[:3]:
+                flow += f"1. `{entry}` serves as an entry point\n"
+            return flow
+        return "**Execution Flow:** Multiple entry points detected - see individual modules below"
+    
+    def _get_project_summary(self, analysis: Dict[str, Any]) -> str:
+        """Generate a concise project summary"""
+        return f"{analysis['project_type'].replace('_', ' ').title()} with {analysis['complexity_metrics']['total_functions']} functions across {analysis['total_files']} modules"
+    
+    def _get_file_purpose(self, file_info: Dict[str, Any], analysis: Dict[str, Any]) -> str:
+        """Determine the purpose of a specific file"""
+        if 'test' in file_info.get('file_path', '').lower():
+            return "Testing Module"
+        elif 'main' in file_info.get('file_path', '').lower():
+            return "Main Entry Point"
+        elif 'config' in file_info.get('file_path', '').lower():
+            return "Configuration Module"
+        elif len(file_info.get('classes', [])) > 0:
+            return "Core Logic Module"
+        else:
+            return "Utility Module"
+    
+    def _analyze_file_role(self, file_info: Dict[str, Any], analysis: Dict[str, Any]) -> str:
+        """Analyze the role of a file in the overall system"""
+        func_count = len(file_info.get('functions', []))
+        class_count = len(file_info.get('classes', []))
+        
+        if func_count > 5:
+            return f"Heavy processing module with {func_count} functions"
+        elif class_count > 0:
+            return f"Object-oriented module defining {class_count} classes"
+        else:
+            return "Support/utility module"
+    
+    def _explain_import_purpose(self, import_name: str, file_info: Dict[str, Any]) -> str:
+        """Explain why an import is used"""
+        import_lower = import_name.lower()
+        if 'os' in import_lower or 'sys' in import_lower:
+            return "System operations and environment access"
+        elif 'json' in import_lower or 'yaml' in import_lower:
+            return "Data serialization and configuration"
+        elif 'requests' in import_lower or 'http' in import_lower:
+            return "HTTP requests and web communication"
+        elif 'fastapi' in import_lower or 'flask' in import_lower:
+            return "Web framework for API endpoints"
+        elif 'pandas' in import_lower or 'numpy' in import_lower:
+            return "Data analysis and numerical computation"
+        else:
+            return "Supporting functionality"
+    
+    def _analyze_class_purpose(self, cls, analysis: Dict[str, Any]) -> str:
+        """Analyze what a class is designed to do"""
+        name_lower = cls.name.lower()
+        if 'manager' in name_lower or 'handler' in name_lower:
+            return f"Manages and handles {cls.name.replace('Manager', '').replace('Handler', '')} operations"
+        elif 'analyzer' in name_lower:
+            return f"Analyzes and processes data for insights"
+        elif 'generator' in name_lower:
+            return f"Generates output or creates new instances"
+        else:
+            return f"Core business logic implementation"
+    
+    def _explain_class_usage(self, cls, analysis: Dict[str, Any]) -> str:
+        """Explain when and how a class is used"""
+        method_count = len(cls.methods)
+        if method_count > 10:
+            return f"Central class with {method_count} methods - likely main business logic"
+        elif method_count > 5:
+            return f"Important class with {method_count} methods - key functionality"
+        else:
+            return f"Supporting class with {method_count} methods - specific use case"
+    
+    def _explain_method_workflow(self, method, analysis: Dict[str, Any]) -> str:
+        """Explain what a method does in workflow terms"""
+        name_lower = method.name.lower()
+        if name_lower.startswith('get') or name_lower.startswith('fetch'):
+            return "Retrieves data or information"
+        elif name_lower.startswith('set') or name_lower.startswith('update'):
+            return "Updates or modifies data"
+        elif name_lower.startswith('create') or name_lower.startswith('generate'):
+            return "Creates new instances or generates output"
+        elif name_lower.startswith('process') or name_lower.startswith('analyze'):
+            return "Processes input and performs analysis"
+        else:
+            return f"Handles {method.name.replace('_', ' ')} operations"
+    
+    def _generate_function_explanation(self, func, analysis: Dict[str, Any]) -> str:
+        """Generate a detailed explanation of what a function does"""
+        if func.docstring:
+            return func.docstring[:200] + "..." if len(func.docstring) > 200 else func.docstring
+        
+        name_parts = func.name.lower().split('_')
+        if 'main' in name_parts:
+            return "Main entry point that coordinates the application workflow"
+        elif 'process' in name_parts:
+            return f"Processes {' '.join(name_parts[1:])} and performs operations on the data"
+        elif 'generate' in name_parts:
+            return f"Generates {' '.join(name_parts[1:])} based on input parameters"
+        elif 'analyze' in name_parts:
+            return f"Analyzes {' '.join(name_parts[1:])} and extracts insights"
+        elif 'create' in name_parts:
+            return f"Creates new {' '.join(name_parts[1:])} instances"
+        else:
+            return f"Implements {func.name.replace('_', ' ')} functionality"
+    
+    def _trace_function_workflow(self, func, analysis: Dict[str, Any]) -> str:
+        """Trace the workflow within a function"""
+        if func.calls:
+            workflow = f"1. Calls {len(func.calls)} other functions\n"
+            for call in func.calls[:3]:
+                workflow += f"   - Uses `{call}()` for processing\n"
+            return workflow
+        return ""
+    
+    def _generate_detailed_usage_guide(self, analysis: Dict[str, Any]) -> str:
+        """Generate a detailed usage guide"""
+        entry_points = analysis.get('entry_points', [])
+        project_type = analysis['project_type']
+        
+        if 'web' in project_type.lower():
+            return """
+```python
+# Start the web server
+python main.py  # or the appropriate entry point
+
+# Make API requests
+import requests
+response = requests.get('http://localhost:8000/endpoint')
+```
+"""
+        elif 'cli' in project_type.lower():
+            return """
+```bash
+# Command line usage
+python main.py --help  # See available options
+python main.py --input data.txt --output result.txt
+```
+"""
+        else:
+            return """
+```python
+# Basic usage example
+from main_module import MainClass
+
+# Initialize and use
+instance = MainClass()
+result = instance.process_data(input_data)
+```
+"""
+    
+    def _generate_code_flow_explanation(self, analysis: Dict[str, Any]) -> str:
+        """Generate an explanation of the code flow"""
+        return f"""
+**Understanding the Architecture:**
+
+1. **Entry Points:** {len(analysis.get('entry_points', []))} main entry points identified
+2. **Module Structure:** {analysis['total_files']} modules with {analysis['complexity_metrics']['total_functions']} functions
+3. **Dependencies:** {len(analysis['call_graph']['edges'])} inter-function connections
+4. **Complexity:** Average function complexity of {analysis['complexity_metrics']['average_function_complexity']:.1f}
+
+**Code Organization:**
+- Core logic is distributed across {analysis['total_files']} files
+- Primary functionality centers around {analysis['project_type'].replace('_', ' ')}
+- Uses {', '.join(analysis['key_technologies']) if analysis['key_technologies'] else 'standard Python libraries'}
+"""
+    
+    def _calculate_distribution_score(self, analysis: Dict[str, Any]) -> float:
+        """Calculate code distribution score"""
+        return min(100.0, analysis['quality_metrics']['functions_per_file'] * 10)
+    
+    def _generate_ascii_dependency_graph(self, analysis: Dict[str, Any]) -> str:
+        """Generate ASCII representation of dependency graph"""
+        if not analysis['call_graph']['edges']:
+            return "No complex dependencies found - clean architecture"
+        
+        return f"""
+Dependencies Found: {len(analysis['call_graph']['edges'])} connections
+
+┌─ FILE DEPENDENCIES ─┐
+{chr(10).join(f"│ {os.path.basename(f):<20} │" for f in list(analysis['file_analysis'].keys())[:5])}
+└──────────────────────┘
+
+Complexity Flow: Simple → Moderate → Complex
+"""
+    
+    def _analyze_module_purpose(self, file_info: Dict[str, Any], analysis: Dict[str, Any]) -> str:
+        """Analyze the purpose of a module"""
+        func_count = len(file_info.get('functions', []))
+        class_count = len(file_info.get('classes', []))
+        
+        if func_count > 10:
+            return f"Core processing module with {func_count} functions"
+        elif class_count > 2:
+            return f"Object-oriented design module with {class_count} classes"
+        else:
+            return "Supporting utility module"
+    
+    def _generate_performance_analysis(self, analysis: Dict[str, Any]) -> str:
+        """Generate performance analysis"""
+        avg_complexity = analysis['complexity_metrics']['average_function_complexity']
+        max_complexity = analysis['complexity_metrics']['max_complexity']
+        
+        return f"""
+Estimated Performance Characteristics:
+- Average complexity: {avg_complexity:.1f} (Lower is better)
+- Peak complexity: {max_complexity} (Functions >15 may need optimization)
+- Memory usage: Estimated low-to-moderate based on structure
+- CPU usage: Depends on input size and processing complexity
+"""
+    
+    def _generate_visual_examples(self, analysis: Dict[str, Any]) -> str:
+        """Generate visual examples and diagrams"""
+        return f"""
+```
+Application Flow Diagram:
+
+Input → Processing → Output
+  │         │         │
+  ▼         ▼         ▼
+{analysis['total_files']} files → {analysis['complexity_metrics']['total_functions']} functions → Results
+```
+
+Example Usage Pattern:
+```python
+# Typical workflow based on codebase analysis
+{self._generate_example_workflow(analysis)}
+```
+"""
+    
+    def _generate_example_workflow(self, analysis: Dict[str, Any]) -> str:
+        """Generate example workflow code"""
+        project_type = analysis['project_type']
+        if 'web' in project_type.lower():
+            return """
+app = create_app()
+app.run(host='0.0.0.0', port=8000)
+"""
+        else:
+            return """
+# Initialize main components
+main_instance = MainClass()
+result = main_instance.process()
+print(result)
+"""
+    
+    def _calculate_maintainability_score(self, analysis: Dict[str, Any]) -> float:
+        """Calculate maintainability score"""
+        doc_score = analysis['quality_metrics']['documentation_coverage']
+        complexity_score = max(0, 100 - analysis['complexity_metrics']['average_function_complexity'] * 5)
+        return (doc_score + complexity_score) / 2
+    
+    def _has_tests(self, analysis: Dict[str, Any]) -> bool:
+        """Check if project has tests"""
+        for file_path in analysis['file_analysis'].keys():
+            if 'test' in file_path.lower():
+                return True
+        return False
+    
+    def _count_test_functions(self, analysis: Dict[str, Any]) -> int:
+        """Count test functions"""
+        count = 0
+        for file_info in analysis['file_analysis'].values():
+            for func in file_info.get('functions', []):
+                if func.name.startswith('test_'):
+                    count += 1
+        return count
+    
+    def _generate_project_mission(self, analysis: Dict[str, Any], context: str) -> str:
+        """Generate project mission statement"""
+        project_type = analysis['project_type'].replace('_', ' ')
+        return f"This {project_type} aims to provide robust, maintainable solutions. {context}"
+    
+    def _generate_dev_start_command(self, analysis: Dict[str, Any]) -> str:
+        """Generate development start command"""
+        if analysis['project_type'] == 'web_application':
+            return "python main.py  # or uvicorn app:app --reload"
+        else:
+            return "python main.py --help"
+    
+    def _generate_directory_tree(self, analysis: Dict[str, Any]) -> str:
+        """Generate directory tree structure"""
+        tree = ""
+        for file_path in analysis['file_analysis'].keys():
+            tree += f"├── {file_path}\n"
+        return tree
+    
+    def _generate_module_guide(self, analysis: Dict[str, Any]) -> str:
+        """Generate module responsibility guide"""
+        guide = ""
+        for file_path, file_info in analysis['file_analysis'].items():
+            purpose = self._get_file_purpose(file_info, analysis)
+            guide += f"**`{file_path}`** - {purpose}\n"
+            if file_info.get('functions'):
+                guide += f"  - Contains {len(file_info['functions'])} functions\n"
+            if file_info.get('classes'):
+                guide += f"  - Defines {len(file_info['classes'])} classes\n"
+            guide += "\n"
+        return guide
+    
+    # Additional helper methods for technical documentation
+    def _generate_system_purpose(self, analysis: Dict[str, Any], context: str) -> str:
+        """Generate comprehensive system purpose"""
+        return f"A {analysis['project_type'].replace('_', ' ')} system designed for {context.lower()}. Implements {analysis['complexity_metrics']['total_functions']} functions across {analysis['total_files']} modules with {', '.join(analysis['key_technologies']) if analysis['key_technologies'] else 'pure Python'} technology stack."
+    
+    def _infer_deployment_target(self, analysis: Dict[str, Any]) -> str:
+        """Infer deployment target from code analysis"""
+        if 'web' in analysis['project_type'].lower():
+            return "Web server/container deployment"
+        elif 'cli' in analysis['project_type'].lower():
+            return "Command-line/desktop environment"
+        else:
+            return "Python runtime environment"
+    
+    def _generate_ascii_architecture_diagram(self, analysis: Dict[str, Any]) -> str:
+        """Generate ASCII architecture diagram"""
+        return f"""
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│   Input     │───▶│  Processing │───▶│   Output    │
+│ {analysis['total_files']} modules   │    │ {analysis['complexity_metrics']['total_functions']} functions │    │   Results   │
+└─────────────┘    └─────────────┘    └─────────────┘
+        │                  │                  │
+        ▼                  ▼                  ▼
+    Data Flow         Business Logic     User Interface
+"""
+    
+    def _generate_architecture_summary(self, analysis: Dict[str, Any]) -> str:
+        """Generate architecture summary"""
+        return f"""
+### Architecture Analysis
+
+**System Design:** {analysis['project_type'].replace('_', ' ').title()} following {"modular design patterns" if analysis['total_files'] > 3 else "simple structure"}
+
+**Key Characteristics:**
+- **Modularity:** {analysis['total_files']} separate modules promoting separation of concerns
+- **Complexity Distribution:** Average {analysis['complexity_metrics']['average_function_complexity']:.1f} complexity per function
+- **Coupling:** {len(analysis['call_graph']['edges'])} inter-function dependencies
+- **Cohesion:** {"High" if analysis['quality_metrics']['functions_per_file'] < 10 else "Moderate"} - functions well-grouped by responsibility
+"""
+    
+    def _map_execution_flow(self, analysis: Dict[str, Any]) -> str:
+        """Map execution flow"""
+        entry_points = analysis.get('entry_points', [])
+        if not entry_points:
+            return "**Flow:** Distributed execution - multiple entry points across modules"
+        
+        flow = "**Primary Execution Paths:**\n\n"
+        for i, entry in enumerate(entry_points[:3], 1):
+            file_name = entry.split(':')[0] if ':' in entry else entry
+            func_name = entry.split(':')[1] if ':' in entry else 'main'
+            flow += f"{i}. `{file_name}:{func_name}()` → Initiates {self._infer_entry_purpose(entry, analysis)}\n"
+        
+        return flow
+    
+    def _infer_entry_purpose(self, entry_point: str, analysis: Dict[str, Any]) -> str:
+        """Infer the purpose of an entry point"""
+        if 'main' in entry_point.lower():
+            return "primary application workflow"
+        elif 'test' in entry_point.lower():
+            return "testing and validation procedures"
+        elif 'server' in entry_point.lower():
+            return "web server and API endpoints"
+        else:
+            return "specialized processing tasks"
+    
+    def _assess_complexity(self, analysis: Dict[str, Any]) -> str:
+        """Assess code complexity"""
+        avg = analysis['complexity_metrics']['average_function_complexity']
+        if avg < 5:
+            return "🟢 Low - Easy to maintain"
+        elif avg < 10:
+            return "🟡 Moderate - Manageable complexity"
+        else:
+            return "🔴 High - Consider refactoring"
+    
+    def _recommend_complexity_improvement(self, analysis: Dict[str, Any]) -> str:
+        """Recommend complexity improvements"""
+        avg = analysis['complexity_metrics']['average_function_complexity']
+        if avg > 10:
+            return "Break down large functions into smaller, focused units"
+        elif avg > 7:
+            return "Consider extracting helper functions for clarity"
+        else:
+            return "Maintain current structure - complexity is well-managed"
+    
+    def _assess_documentation(self, analysis: Dict[str, Any]) -> str:
+        """Assess documentation quality"""
+        coverage = analysis['quality_metrics']['documentation_coverage']
+        if coverage > 80:
+            return "🟢 Excellent"
+        elif coverage > 60:
+            return "🟡 Good"
+        elif coverage > 40:
+            return "🟠 Moderate"
+        else:
+            return "🔴 Poor"
+    
+    def _recommend_documentation_improvement(self, analysis: Dict[str, Any]) -> str:
+        """Recommend documentation improvements"""
+        coverage = analysis['quality_metrics']['documentation_coverage']
+        if coverage < 50:
+            return "Add docstrings to all public functions and classes"
+        elif coverage < 80:
+            return "Improve existing docstrings with examples and parameters"
+        else:
+            return "Maintain current documentation standards"
+    
+    def _assess_distribution(self, analysis: Dict[str, Any]) -> str:
+        """Assess code distribution"""
+        fpf = analysis['quality_metrics']['functions_per_file']
+        if fpf < 5:
+            return "🟢 Well distributed"
+        elif fpf < 10:
+            return "🟡 Acceptable"
+        else:
+            return "🔴 Consider splitting large files"
+    
+    def _recommend_distribution_improvement(self, analysis: Dict[str, Any]) -> str:
+        """Recommend distribution improvements"""
+        fpf = analysis['quality_metrics']['functions_per_file']
+        if fpf > 15:
+            return "Split large modules into focused components"
+        elif fpf > 10:
+            return "Consider grouping related functions into classes"
+        else:
+            return "Current distribution promotes maintainability"
+    
+    def _assess_coupling(self, analysis: Dict[str, Any]) -> str:
+        """Assess system coupling"""
+        edges = len(analysis['call_graph']['edges'])
+        total_funcs = analysis['complexity_metrics']['total_functions']
+        ratio = edges / total_funcs if total_funcs > 0 else 0
+        
+        if ratio < 0.3:
+            return "🟢 Low coupling"
+        elif ratio < 0.6:
+            return "🟡 Moderate coupling"
+        else:
+            return "🔴 High coupling"
+    
+    def _recommend_coupling_improvement(self, analysis: Dict[str, Any]) -> str:
+        """Recommend coupling improvements"""
+        edges = len(analysis['call_graph']['edges'])
+        if edges > analysis['complexity_metrics']['total_functions']:
+            return "Reduce dependencies through interface abstraction"
+        else:
+            return "Current coupling level supports maintainability"
+    
+    def _generate_detailed_module_analysis(self, analysis: Dict[str, Any]) -> str:
+        """Generate detailed module analysis"""
+        result = ""
+        for file_path, file_info in analysis['file_analysis'].items():
+            result += f"#### 📄 {file_path}\n\n"
+            result += f"**Purpose:** {self._analyze_module_purpose(file_info, analysis)}\n"
+            result += f"**Complexity:** {self._calculate_module_complexity(file_info)}\n"
+            result += f"**Dependencies:** {len(file_info.get('imports', []))} external imports\n"
+            result += f"**API Surface:** {len([f for f in file_info.get('functions', []) if not f.name.startswith('_')])} public functions\n\n"
+            
+            # Show key functions
+            key_funcs = [f for f in file_info.get('functions', []) if not f.name.startswith('_')][:3]
+            if key_funcs:
+                result += "**Key Functions:**\n"
+                for func in key_funcs:
+                    result += f"- `{func.name}()` (complexity: {func.complexity})\n"
+            result += "\n"
+        
+        return result
+    
+    def _calculate_module_complexity(self, file_info: Dict[str, Any]) -> str:
+        """Calculate module complexity"""
+        functions = file_info.get('functions', [])
+        if not functions:
+            return "N/A"
+        
+        avg_complexity = sum(f.complexity for f in functions) / len(functions)
+        if avg_complexity < 5:
+            return f"Low ({avg_complexity:.1f} avg)"
+        elif avg_complexity < 10:
+            return f"Moderate ({avg_complexity:.1f} avg)"
+        else:
+            return f"High ({avg_complexity:.1f} avg)"
+    
+    def _analyze_security_aspects(self, analysis: Dict[str, Any]) -> str:
+        """Analyze security aspects"""
+        security_imports = []
+        potential_risks = []
+        
+        for file_info in analysis['file_analysis'].values():
+            for imp in file_info.get('imports', []):
+                if any(sec in imp.lower() for sec in ['crypto', 'hash', 'auth', 'token', 'security']):
+                    security_imports.append(imp)
+                if any(risk in imp.lower() for risk in ['subprocess', 'eval', 'exec', 'input']):
+                    potential_risks.append(imp)
+        
+        result = "### Security Analysis\n\n"
+        if security_imports:
+            result += f"**Security-related imports found:** {', '.join(security_imports)}\n"
+        if potential_risks:
+            result += f"**Potential security considerations:** {', '.join(potential_risks)}\n"
+        else:
+            result += "**Security status:** No obvious security risks detected in imports\n"
+        
+        return result
+    
+    def _analyze_performance_characteristics(self, analysis: Dict[str, Any]) -> str:
+        """Analyze performance characteristics"""
+        high_complexity_funcs = []
+        for file_info in analysis['file_analysis'].values():
+            for func in file_info.get('functions', []):
+                if func.complexity > 15:
+                    high_complexity_funcs.append(func)
+        
+        result = "### Performance Analysis\n\n"
+        result += f"**Computational Complexity:** Average O(n^{analysis['complexity_metrics']['average_function_complexity']:.0f}) based on cyclomatic complexity\n"
+        
+        if high_complexity_funcs:
+            result += f"**Performance Hotspots:** {len(high_complexity_funcs)} functions with high complexity may impact performance\n"
+        else:
+            result += "**Performance Status:** No obvious performance bottlenecks detected\n"
+        
+        return result
+    
+    def _identify_contribution_areas(self, analysis: Dict[str, Any]) -> str:
+        """Identify areas needing contribution"""
+        areas = []
+        
+        if analysis['quality_metrics']['documentation_coverage'] < 70:
+            areas.append("📝 **Documentation** - Improve docstring coverage")
+        
+        if analysis['complexity_metrics']['max_complexity'] > 15:
+            areas.append("🔧 **Code Simplification** - Reduce function complexity")
+        
+        if not self._has_tests(analysis):
+            areas.append("🧪 **Testing** - Add comprehensive test coverage")
+        
+        areas.append("✨ **New Features** - Extend functionality")
+        areas.append("🐛 **Bug Fixes** - Improve reliability")
+        
+        return "\n".join(areas)
+    
+    def _generate_coding_standards(self, analysis: Dict[str, Any]) -> str:
+        """Generate coding standards based on existing code"""
+        return f"""
+# Function naming: {self._analyze_naming_patterns(analysis)}
+def process_data(input_data):
+    \"\"\"Document all functions with docstrings\"\"\"
+    pass
+
+# Keep functions under 15 complexity (current max: {analysis['complexity_metrics']['max_complexity']})
+# Use type hints where possible
+# Follow PEP 8 style guide
+"""
+    
+    def _analyze_naming_patterns(self, analysis: Dict[str, Any]) -> str:
+        """Analyze naming patterns in the codebase"""
+        return "snake_case (as observed in codebase)"
+    
+    # Additional technical analysis methods
+    def _analyze_data_structures(self, analysis: Dict[str, Any]) -> str:
+        """Analyze data structures used"""
+        return f"""
+**Primary Data Structures:**
+- Function parameters: {sum(len(f.args) for file_info in analysis['file_analysis'].values() for f in file_info.get('functions', []))} total parameters
+- Class attributes: {sum(len(c.attributes) for file_info in analysis['file_analysis'].values() for c in file_info.get('classes', []))} total attributes
+- Return types: Mixed (inferred from function signatures)
+"""
+    
+    def _analyze_state_management(self, analysis: Dict[str, Any]) -> str:
+        """Analyze state management patterns"""
+        class_count = analysis['complexity_metrics']['total_classes']
+        if class_count > 0:
+            return f"**Object-oriented state management** with {class_count} classes managing state"
+        else:
+            return "**Functional approach** with minimal state management"
+    
+    def _analyze_memory_patterns(self, analysis: Dict[str, Any]) -> str:
+        """Analyze memory usage patterns"""
+        return f"""
+**Memory Characteristics:**
+- Static allocation: {analysis['total_files']} modules loaded at startup
+- Dynamic allocation: Based on input data size and processing requirements
+- Garbage collection: Standard Python GC handles cleanup
+"""
+    
+    def _identify_design_patterns(self, analysis: Dict[str, Any]) -> str:
+        """Identify design patterns used"""
+        patterns = []
+        
+        for file_info in analysis['file_analysis'].values():
+            for cls in file_info.get('classes', []):
+                if 'factory' in cls.name.lower():
+                    patterns.append("Factory Pattern")
+                elif 'manager' in cls.name.lower():
+                    patterns.append("Manager Pattern")
+                elif 'handler' in cls.name.lower():
+                    patterns.append("Handler Pattern")
+        
+        if patterns:
+            return f"**Identified Patterns:** {', '.join(set(patterns))}"
+        else:
+            return "**Design Patterns:** Simple procedural/functional design approach"
+    
+    def _analyze_error_handling(self, analysis: Dict[str, Any]) -> str:
+        """Analyze error handling strategy"""
+        return f"""
+**Error Handling Approach:**
+- Exception handling: Standard Python try/except blocks (inferred)
+- Validation: Input validation in functions with multiple parameters
+- Logging: {self._detect_logging_usage(analysis)}
+"""
+    
+    def _detect_logging_usage(self, analysis: Dict[str, Any]) -> str:
+        """Detect logging usage"""
+        for file_info in analysis['file_analysis'].values():
+            if any('logging' in imp.lower() for imp in file_info.get('imports', [])):
+                return "Structured logging implemented"
+        return "Basic error handling (no logging imports detected)"
+    
+    def _analyze_configuration_approach(self, analysis: Dict[str, Any]) -> str:
+        """Analyze configuration management"""
+        config_patterns = ['config', 'settings', 'env', 'yaml', 'json']
+        has_config = False
+        
+        for file_path in analysis['file_analysis'].keys():
+            if any(pattern in file_path.lower() for pattern in config_patterns):
+                has_config = True
+                break
+        
+        if has_config:
+            return "**Configuration Management:** Dedicated configuration files/modules detected"
+        else:
+            return "**Configuration Management:** Hardcoded or minimal configuration approach"
+    
+    def _generate_system_requirements(self, analysis: Dict[str, Any]) -> str:
+        """Generate system requirements"""
+        return f"""
+**Minimum Requirements:**
+- Python 3.8+
+- RAM: 512MB (estimated based on {analysis['total_files']} modules)
+- Storage: 100MB for dependencies
+- CPU: Single core sufficient for moderate workloads
+
+**Recommended Requirements:**
+- Python 3.9+
+- RAM: 2GB for optimal performance
+- Storage: 1GB including development tools
+- CPU: Multi-core for concurrent processing
+"""
+    
+    def _suggest_deployment_architecture(self, analysis: Dict[str, Any]) -> str:
+        """Suggest deployment architecture"""
+        if 'web' in analysis['project_type'].lower():
+            return """
+**Recommended Deployment:**
+- Containerized deployment (Docker)
+- Load balancer for multiple instances
+- Database connection pooling
+- Monitoring and logging infrastructure
+"""
+        else:
+            return """
+**Recommended Deployment:**
+- Virtual environment isolation
+- Process monitoring (systemd/supervisor)
+- Log rotation and archival
+- Backup and recovery procedures
+"""
+    
+    def _suggest_monitoring_strategy(self, analysis: Dict[str, Any]) -> str:
+        """Suggest monitoring strategy"""
+        return f"""
+**Monitoring Recommendations:**
+- Application metrics: Response time, throughput, error rates
+- System metrics: CPU, memory, disk usage
+- Business metrics: Based on {analysis['project_type'].replace('_', ' ')} functionality
+- Alerting: Critical error notifications and performance thresholds
+"""
+    
+    def _generate_complexity_heatmap(self, analysis: Dict[str, Any]) -> str:
+        """Generate complexity heatmap"""
+        result = "**Function Complexity Distribution:**\n\n"
+        
+        complexity_ranges = {'Low (1-5)': 0, 'Medium (6-10)': 0, 'High (11-15)': 0, 'Very High (16+)': 0}
+        
+        for file_info in analysis['file_analysis'].values():
+            for func in file_info.get('functions', []):
+                if func.complexity <= 5:
+                    complexity_ranges['Low (1-5)'] += 1
+                elif func.complexity <= 10:
+                    complexity_ranges['Medium (6-10)'] += 1
+                elif func.complexity <= 15:
+                    complexity_ranges['High (11-15)'] += 1
+                else:
+                    complexity_ranges['Very High (16+)'] += 1
+        
+        for range_name, count in complexity_ranges.items():
+            percentage = (count / analysis['complexity_metrics']['total_functions'] * 100) if analysis['complexity_metrics']['total_functions'] > 0 else 0
+            result += f"- {range_name}: {count} functions ({percentage:.1f}%)\n"
+        
+        return result
+    
+    def _analyze_dependency_relationships(self, analysis: Dict[str, Any]) -> str:
+        """Analyze dependency relationships"""
+        edges = len(analysis['call_graph']['edges'])
+        nodes = analysis['complexity_metrics']['total_functions']
+        
+        if edges == 0:
+            return "**Dependency Analysis:** Independent functions with minimal coupling"
+        
+        density = (edges / (nodes * (nodes - 1))) * 100 if nodes > 1 else 0
+        
+        return f"""
+**Dependency Network:**
+- Total connections: {edges}
+- Network density: {density:.2f}%
+- Coupling level: {"Low" if density < 10 else "Moderate" if density < 30 else "High"}
+"""
+    
+    def _identify_critical_paths(self, analysis: Dict[str, Any]) -> str:
+        """Identify critical execution paths"""
+        entry_points = analysis.get('entry_points', [])
+        if not entry_points:
+            return "**Critical Paths:** Distributed architecture - multiple entry points"
+        
+        result = "**Critical Execution Paths:**\n"
+        for entry in entry_points[:3]:
+            result += f"- {entry} → Core application flow\n"
+        
+        return result
+    
+    def _assess_technical_debt(self, analysis: Dict[str, Any]) -> str:
+        """Assess technical debt"""
+        debt_factors = []
+        
+        if analysis['quality_metrics']['documentation_coverage'] < 60:
+            debt_factors.append("Low documentation coverage")
+        
+        if analysis['complexity_metrics']['max_complexity'] > 20:
+            debt_factors.append("High function complexity")
+        
+        if not self._has_tests(analysis):
+            debt_factors.append("Missing test coverage")
+        
+        if debt_factors:
+            return f"**Technical Debt:** {', '.join(debt_factors)}"
+        else:
+            return "**Technical Debt:** Low - well-maintained codebase"
+    
+    def _identify_refactoring_opportunities(self, analysis: Dict[str, Any]) -> str:
+        """Identify refactoring opportunities"""
+        opportunities = []
+        
+        # Find high complexity functions
+        high_complexity = []
+        for file_info in analysis['file_analysis'].values():
+            for func in file_info.get('functions', []):
+                if func.complexity > 15:
+                    high_complexity.append(f"{func.name} (complexity: {func.complexity})")
+        
+        if high_complexity:
+            opportunities.append(f"**Complex Functions:** {', '.join(high_complexity[:3])}")
+        
+        # Check for large files
+        large_files = [path for path, info in analysis['file_analysis'].items() 
+                      if len(info.get('functions', [])) > 15]
+        
+        if large_files:
+            opportunities.append(f"**Large Modules:** Consider splitting {', '.join(large_files[:2])}")
+        
+        if not opportunities:
+            opportunities.append("**Status:** Code structure supports maintainability")
+        
+        return '\n'.join(opportunities)
+    
+    def _recommend_testing_strategy(self, analysis: Dict[str, Any]) -> str:
+        """Recommend testing strategy"""
+        current_tests = self._count_test_functions(analysis)
+        total_functions = analysis['complexity_metrics']['total_functions']
+        
+        if current_tests == 0:
+            return f"""
+**Testing Strategy:**
+- Add unit tests for {total_functions} functions
+- Focus on high-complexity functions first
+- Implement integration tests for main workflows
+- Target 80% code coverage
+"""
+        else:
+            return f"""
+**Testing Strategy:**
+- Current: {current_tests} test functions
+- Expand coverage for untested modules
+- Add edge case testing
+- Implement automated testing pipeline
+"""
+    
+    def _identify_current_limitations(self, analysis: Dict[str, Any]) -> str:
+        """Identify current system limitations"""
+        limitations = []
+        
+        if analysis['complexity_metrics']['max_complexity'] > 20:
+            limitations.append("High complexity functions may be hard to maintain")
+        
+        if not self._has_tests(analysis):
+            limitations.append("Lack of automated testing reduces reliability")
+        
+        if analysis['quality_metrics']['documentation_coverage'] < 50:
+            limitations.append("Poor documentation hinders onboarding")
+        
+        if not limitations:
+            limitations.append("No significant limitations identified")
+        
+        return '\n'.join(f"- {limitation}" for limitation in limitations)
+    
+    def _identify_scalability_issues(self, analysis: Dict[str, Any]) -> str:
+        """Identify potential scalability issues"""
+        issues = []
+        
+        high_coupling = len(analysis['call_graph']['edges']) > analysis['complexity_metrics']['total_functions']
+        if high_coupling:
+            issues.append("High inter-function coupling may limit scalability")
+        
+        large_modules = any(len(info.get('functions', [])) > 20 for info in analysis['file_analysis'].values())
+        if large_modules:
+            issues.append("Large modules may become bottlenecks")
+        
+        if not issues:
+            issues.append("Current architecture supports horizontal scaling")
+        
+        return '\n'.join(f"- {issue}" for issue in issues)
+    
+    def _suggest_technical_evolution(self, analysis: Dict[str, Any]) -> str:
+        """Suggest technical evolution path"""
+        suggestions = []
+        
+        if analysis['complexity_metrics']['total_classes'] == 0:
+            suggestions.append("Consider object-oriented refactoring for better organization")
+        
+        if 'web' in analysis['project_type'].lower():
+            suggestions.append("Implement API versioning and microservices architecture")
+        
+        suggestions.append("Add comprehensive monitoring and observability")
+        suggestions.append("Implement automated deployment pipelines")
+        
+        return '\n'.join(f"- {suggestion}" for suggestion in suggestions)
+    
+    def _identify_environment_dependencies(self, analysis: Dict[str, Any]) -> str:
+        """Identify environment dependencies"""
+        env_deps = []
+        
+        for file_info in analysis['file_analysis'].values():
+            for imp in file_info.get('imports', []):
+                if 'os' in imp.lower() or 'env' in imp.lower():
+                    env_deps.append("Environment variables")
+                    break
+        
+        if env_deps:
+            return f"**Environment Dependencies:** {', '.join(env_deps)}"
+        else:
+            return "**Environment Dependencies:** Self-contained application"
+    
+    def _analyze_external_dependencies(self, analysis: Dict[str, Any]) -> str:
+        """Analyze external dependencies"""
+        external_deps = set()
+        
+        for file_info in analysis['file_analysis'].values():
+            for imp in file_info.get('imports', []):
+                if not imp.startswith('.') and imp not in ['os', 'sys', 'json', 're', 'collections']:
+                    external_deps.add(imp.split('.')[0])
+        
+        if external_deps:
+            return f"**External Libraries:** {', '.join(sorted(external_deps)[:10])}"
+        else:
+            return "**External Libraries:** Uses only Python standard library"
+    
+    def _analyze_runtime_configuration(self, analysis: Dict[str, Any]) -> str:
+        """Analyze runtime configuration"""
+        has_config = any('config' in path.lower() for path in analysis['file_analysis'].keys())
+        
+        if has_config:
+            return "**Runtime Configuration:** Configurable via dedicated configuration files"
+        else:
+            return "**Runtime Configuration:** Hardcoded or command-line parameters"
+    
+    def _generate_testing_guidelines(self, analysis: Dict[str, Any]) -> str:
+        """Generate testing guidelines"""
+        return f"""
+**Testing Strategy:**
+- Unit tests for all {analysis['complexity_metrics']['total_functions']} functions
+- Integration tests for main workflows
+- Focus on functions with complexity > 10
+- Mock external dependencies
+- Aim for 80%+ code coverage
+"""
+    
+    def _generate_maintainer_checklist(self, analysis: Dict[str, Any]) -> str:
+        """Generate maintainer checklist"""
+        return f"""
+**Pre-release Checklist:**
+- [ ] All {analysis['complexity_metrics']['total_functions']} functions documented
+- [ ] Test coverage > 80%
+- [ ] No functions with complexity > 15
+- [ ] Security review completed
+- [ ] Performance benchmarks updated
+- [ ] Documentation updated
+- [ ] Breaking changes documented
+"""
+    
+    def _assess_project_maturity(self, analysis: Dict[str, Any]) -> str:
+        """Assess project maturity level"""
+        score = 0
+        
+        if analysis['quality_metrics']['documentation_coverage'] > 70:
+            score += 1
+        if self._has_tests(analysis):
+            score += 1
+        if analysis['complexity_metrics']['max_complexity'] < 15:
+            score += 1
+        if analysis['total_files'] > 3:
+            score += 1
+        
+        maturity_levels = {
+            0: "Early Development",
+            1: "Basic Functionality", 
+            2: "Stable Development",
+            3: "Production Ready",
+            4: "Mature Project"
+        }
+        
+        return maturity_levels.get(score, "Unknown")
+    
+    def _suggest_growth_areas(self, analysis: Dict[str, Any]) -> str:
+        """Suggest growth areas"""
+        areas = []
+        
+        if not self._has_tests(analysis):
+            areas.append("🧪 **Testing Infrastructure** - Comprehensive test suite")
+        
+        if analysis['quality_metrics']['documentation_coverage'] < 80:
+            areas.append("📚 **Documentation** - API documentation and examples")
+        
+        areas.append("🚀 **Performance** - Optimization and benchmarking")
+        areas.append("🔒 **Security** - Security audit and hardening")
+        areas.append("📈 **Monitoring** - Metrics and observability")
+        
+        return '\n'.join(areas)
+    
+    def _identify_potential_issues(self, analysis: Dict[str, Any]) -> str:
+        """Identify potential issues"""
+        issues = []
+        
+        if analysis['complexity_metrics']['max_complexity'] > 20:
+            issues.append("⚠️  High complexity functions may be error-prone")
+        
+        if not self._has_tests(analysis):
+            issues.append("⚠️  No automated tests - higher risk of regressions")
+        
+        if len(analysis['call_graph']['edges']) > analysis['complexity_metrics']['total_functions']:
+            issues.append("⚠️  High coupling may make changes difficult")
+        
+        if not issues:
+            issues.append("✅ No critical issues identified")
+        
+        return '\n'.join(issues)
+    
+    def _generate_debugging_guide(self, analysis: Dict[str, Any]) -> str:
+        """Generate debugging guide"""
+        return f"""
+**Common Debugging Approaches:**
+1. **Start with entry points:** {len(analysis.get('entry_points', []))} main entry points identified
+2. **Check high-complexity functions:** Focus on functions with complexity > 10
+3. **Trace data flow:** Follow the {len(analysis['call_graph']['edges'])} function calls
+4. **Enable logging:** Add logging to critical paths
+5. **Use debugger:** Step through complex logic in high-complexity functions
+"""
     
     def _generate_usage_examples(self, analysis: Dict[str, Any], project_type: str) -> str:
         """Generate usage examples based on project type"""

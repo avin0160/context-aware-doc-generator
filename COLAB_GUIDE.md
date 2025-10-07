@@ -2,19 +2,28 @@
 
 ## 🚀 Quick Start in Google Colab
 
-### 1. Initial Setup Cell
+### 1. Memory-Optimized Setup Cell
 ```python
-# Run this cell first to set up everything
+# Run this cell first - optimized for low RAM environments
 !git clone https://github.com/avin0160/context-aware-doc-generator.git
 %cd context-aware-doc-generator
 
-# Install required packages
+# Install core packages only (memory efficient)
 !pip install fastapi==0.104.1 uvicorn[standard]==0.24.0 python-multipart==0.0.6
-!pip install pyngrok==7.0.0 requests==2.31.0 datasets==2.14.6 transformers==4.35.2
-!pip install torch==2.1.1 GitPython==3.1.40 markdown==3.5.1 beautifulsoup4==4.12.2
-!pip install pygments==2.16.1 jinja2==3.1.2
+!pip install pyngrok==7.0.0 requests==2.31.0 markdown==3.5.1 beautifulsoup4==4.12.2
 
-print("✅ Setup complete!")
+# Optional: Install AI features only if you have enough RAM (>12GB)
+import psutil
+ram_gb = psutil.virtual_memory().total / (1024**3)
+print(f"Available RAM: {ram_gb:.1f} GB")
+
+if ram_gb > 12:
+    print("Installing AI features...")
+    !pip install datasets==2.14.6 transformers==4.35.2 torch==2.1.1
+    print("✅ Full setup complete with AI features!")
+else:
+    print("⚠️ Low RAM detected - running in lightweight mode")
+    print("✅ Basic setup complete!")
 ```
 
 ### 2. Configure ngrok (for public access)
@@ -55,22 +64,27 @@ print(f"🔐 Password: nOtE7thIs")
 print("\n✅ Server is running! Open the URL above to access the documentation generator.")
 ```
 
-### 4. Alternative: Use CLI Interface
+### 4. Terminal Commands for Documentation Generation
 ```python
-# Generate documentation using command line interface
-import os
+# Memory-efficient CLI documentation generation
 
-# Example 1: Document current repository
+# Example 1: Document current repository (lightweight)
 !python main.py --directory . --style google --context "Google Colab documentation example"
 
-# Example 2: Document from GitHub URL
-!python main.py --url https://github.com/user/repo --style numpy --context "External repository documentation"
+# Example 2: Document small GitHub repository
+!python main.py --url https://github.com/user/small-repo --style numpy --context "External repository documentation"
 
-# Example 3: Different documentation styles
-styles = ["google", "numpy", "technical_md", "opensource", "api", "comprehensive"]
-for style in styles[:3]:  # Test first 3 styles
-    print(f"\n📝 Generating {style} style documentation...")
-    !python main.py --directory . --style {style} --context "Testing {style} documentation style"
+# Example 3: Test different styles (one at a time to save memory)
+print("📝 Generating Google style documentation...")
+!python main.py --directory . --style google --context "Google style test" --output google_docs.md
+
+print("📝 Generating NumPy style documentation...")
+!python main.py --directory . --style numpy --context "NumPy style test" --output numpy_docs.md
+
+print("📝 Generating Technical documentation...")
+!python main.py --directory . --style technical_md --context "Technical analysis" --output technical_docs.md
+
+print("✅ All documentation generated!")
 ```
 
 ### 5. Interactive Documentation Generation
