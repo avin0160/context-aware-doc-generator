@@ -22,31 +22,25 @@ from typing import Optional
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 try:
-    import sys
-    import os
-    # Add current directory to path for imports
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    sys.path.insert(0, current_dir)
-    sys.path.insert(0, os.path.join(current_dir, 'src'))
-    
-    from src.core.context_aware_generator import ContextAwareGenerator
-    from src.core.rag_pipeline import RAGPipeline  
-    from src.core.file_parser import FileParser
-    from src.core.llm_interface import LLMInterface
-    from src.utils.output_formatter import OutputFormatter
-    
-    AI_AVAILABLE = True
-    print("✅ AI components imported successfully")
+    # Import the advanced documentation system
+    from comprehensive_docs_advanced import DocumentationGenerator, MultiInputHandler
+    ADVANCED_SYSTEM_AVAILABLE = True
+    print("✅ Advanced documentation system imported successfully")
 except ImportError as e:
     print(f"⚠️ Import warning: {e}")
-    print("📝 Running in demo mode without full functionality")
-    AI_AVAILABLE = False
+    try:
+        # Fallback to basic system
+        from comprehensive_docs import generate_comprehensive_documentation
+        ADVANCED_SYSTEM_AVAILABLE = False
+        print("📝 Using basic documentation system")
+    except ImportError as e2:
+        print(f"❌ No documentation system available: {e2}")
+        ADVANCED_SYSTEM_AVAILABLE = None
 
 app = FastAPI(title="Context-Aware Documentation Generator", version="2.0.0")
 
 # Global variables
-generator = None
-rag_pipeline = None
+doc_generator = None
 
 def install_fastapi_deps():
     """Install FastAPI dependencies"""
@@ -114,28 +108,18 @@ async def startup_event():
     
     print("🚀 Starting Context-Aware Documentation Generator...")
     
-    # Set environment for compatibility
-    os.environ['DISABLE_QUANTIZATION'] = '1'
-    os.environ['USE_CPU_ONLY'] = '1'
-    
-    if AI_AVAILABLE:
+    # Initialize documentation generator
+    if ADVANCED_SYSTEM_AVAILABLE:
         try:
-            # Initialize components
-            print("🔧 Initializing RAG Pipeline...")
-            rag_pipeline = RAGPipeline()
-            
-            print("🤖 Initializing Context-Aware Generator...")
-            generator = ContextAwareGenerator(rag_pipeline)
-            
-            print("✅ AI components initialized successfully")
+            print("� Initializing Advanced Documentation Generator...")
+            doc_generator = DocumentationGenerator()
+            print("✅ Advanced documentation system ready")
         except Exception as e:
-            print(f"❌ Failed to initialize AI components: {e}")
-            generator = None
-            rag_pipeline = None
+            print(f"❌ Failed to initialize advanced system: {e}")
+            doc_generator = None
     else:
-        print("⚠️ Running in demo mode - AI components not available")
-        generator = None
-        rag_pipeline = None
+        print("⚠️ Running in basic mode")
+        doc_generator = None
 
 async def analyze_repository_structure(repo_path: str, context: str, doc_style: str):
     """Analyze repository structure and generate documentation"""
@@ -660,7 +644,7 @@ async def generate_docs(
     doc_style: str = Form("google")
 ):
     """Generate documentation for repository from Git URL, ZIP, or code"""
-    global generator
+    global doc_generator
     
     try:
         # Handle repository input (Git URL, ZIP file, or code)
@@ -706,14 +690,14 @@ async def generate_docs(
             repo_path = repo_url
             print(f"✅ Using local directory: {repo_path}")
         
-        # Try full AI mode first
-        if generator and AI_AVAILABLE:
+        # Try advanced system first
+        if doc_generator and ADVANCED_SYSTEM_AVAILABLE:
             print("🤖 Using full AI generation...")
             try:
                 if repo_path and os.path.exists(repo_path):
                     # Use repository analysis
-                    if hasattr(generator, 'generate_repository_documentation'):
-                        result = await asyncio.to_thread(generator.generate_repository_documentation, repo_path, context, doc_style)
+                    if hasattr(doc_generator, 'generate_repository_documentation'):
+                        result = await asyncio.to_thread(doc_generator.generate_repository_documentation, repo_path, context, doc_style)
                     else:
                         # Fallback to analyzing main files
                         main_files = []
@@ -729,10 +713,10 @@ async def generate_docs(
                                         continue
                         
                         combined_code = '\n\n'.join(main_files)
-                        result = await asyncio.to_thread(generator.generate_documentation, combined_code, context)
+                        result = await asyncio.to_thread(doc_generator.generate_documentation, combined_code, context)
                 else:
                     # Treat as code snippet
-                    result = await asyncio.to_thread(generator.generate_documentation, repo_url, context)
+                    result = await asyncio.to_thread(doc_generator.generate_documentation, repo_url, context)
                 
                 return JSONResponse({
                     "documentation": result,
@@ -781,11 +765,11 @@ async def run_test():
         return JSONResponse({
             "🧪 test_status": "✅ Repository Documentation System Working",
             "📝 sample_output": doc[:500] + "...",
-            "🤖 ai_status": "✅ Available" if AI_AVAILABLE else "⚠️ Demo mode",
+            "🤖 ai_status": "✅ Available" if ADVANCED_SYSTEM_AVAILABLE else "⚠️ Demo mode",
             "🌐 server_url": "Repository-ready FastAPI server",
             "🔐 password": "nOtE7thIs",
             "📊 supported_inputs": ["Git URLs", "ZIP files", "Local directories", "Code snippets"],
-            "🎨 supported_styles": ["google", "numpy", "markdown"]
+            "🎨 supported_styles": ["google", "numpy", "technical_md", "opensource", "api", "comprehensive"]
         })
     except Exception as e:
         return JSONResponse({

@@ -398,23 +398,19 @@ Examples:
     # Process the codebase
     if args.use_generic:
         process_codebase_generic(
-            source_path=args.source,
-            is_repo=args.repo,
-            branch=args.branch,
-            output_dir=args.output,
+            repo_path=args.source,
             doc_style=args.style,
-            context=args.context
+            context=args.context,
+            output=args.output
         )
     else:
         # Use generic system by default (old RAG system as fallback)
         try:
             process_codebase_generic(
-                source_path=args.source,
-                is_repo=args.repo,
-                branch=args.branch,
-                output_dir=args.output,
+                repo_path=args.source,
                 doc_style=args.style,
-                context=args.context
+                context=args.context,
+                output=args.output
             )
         except Exception as e:
             logger.warning(f"Generic system failed: {e}, falling back to original system")
