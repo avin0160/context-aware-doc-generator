@@ -18,17 +18,22 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from typing import Optional
 
-# Add src to path
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+# CRITICAL: Don't add src to path to avoid importing old broken modules
+# sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+
+# Clear any cached modules that might have AST errors
+if 'comprehensive_docs' in sys.modules:
+    del sys.modules['comprehensive_docs']
 
 try:
-    # Import the FIXED advanced documentation system
-    from comprehensive_docs_advanced import DocumentationGenerator, MultiInputHandler
+    # Import ONLY the FIXED advanced documentation system
+    from comprehensive_docs_advanced import DocumentationGenerator
     ADVANCED_SYSTEM_AVAILABLE = True
     print("✅ FIXED Advanced documentation system imported successfully")
     # Initialize the FIXED generator
     doc_generator = DocumentationGenerator()
     print("✅ Fixed documentation generator initialized - no more placeholder text!")
+    print("✅ AST error should be eliminated!")
 except ImportError as e:
     print(f"❌ Import error: {e}")
     print("❌ CRITICAL: Fixed documentation system not available - will produce placeholder text!")

@@ -271,15 +271,15 @@ class AdvancedRepositoryAnalyzer:
         """Infer parameter type from usage in function body"""
         # Look for type hints in the code
         for child in ast.walk(node):
-            if isinstance(child, ast.Compare) and isinstance(child.left, ast.Name) and child.left.id == param_name:
-                if any(isinstance(op, ast.IsInstance) for op in child.ops):
-                    for comparator in child.comparators:
-                        if isinstance(comparator, ast.Name):
-                            return comparator.id
-            elif isinstance(child, ast.Call):
+            if isinstance(child, ast.Call):
                 if isinstance(child.func, ast.Name):
+                    # Look for isinstance(param, Type) patterns
+                    if child.func.id == 'isinstance' and len(child.args) >= 2:
+                        if isinstance(child.args[0], ast.Name) and child.args[0].id == param_name:
+                            if isinstance(child.args[1], ast.Name):
+                                return child.args[1].id
                     # Common type patterns
-                    if child.func.id in ['len', 'enumerate'] and any(isinstance(arg, ast.Name) and arg.id == param_name for arg in child.args):
+                    elif child.func.id in ['len', 'enumerate'] and any(isinstance(arg, ast.Name) and arg.id == param_name for arg in child.args):
                         return "Sequence"
                     elif child.func.id in ['str', 'int', 'float', 'bool'] and any(isinstance(arg, ast.Name) and arg.id == param_name for arg in child.args):
                         return child.func.id
