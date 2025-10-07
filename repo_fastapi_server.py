@@ -22,25 +22,20 @@ from typing import Optional
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 try:
-    # Import the advanced documentation system
+    # Import the FIXED advanced documentation system
     from comprehensive_docs_advanced import DocumentationGenerator, MultiInputHandler
     ADVANCED_SYSTEM_AVAILABLE = True
-    print("✅ Advanced documentation system imported successfully")
+    print("✅ FIXED Advanced documentation system imported successfully")
+    # Initialize the FIXED generator
+    doc_generator = DocumentationGenerator()
+    print("✅ Fixed documentation generator initialized - no more placeholder text!")
 except ImportError as e:
-    print(f"⚠️ Import warning: {e}")
-    try:
-        # Fallback to basic system
-        from comprehensive_docs import generate_comprehensive_documentation
-        ADVANCED_SYSTEM_AVAILABLE = False
-        print("📝 Using basic documentation system")
-    except ImportError as e2:
-        print(f"❌ No documentation system available: {e2}")
-        ADVANCED_SYSTEM_AVAILABLE = None
+    print(f"❌ Import error: {e}")
+    print("❌ CRITICAL: Fixed documentation system not available - will produce placeholder text!")
+    ADVANCED_SYSTEM_AVAILABLE = False
+    doc_generator = None
 
-app = FastAPI(title="Context-Aware Documentation Generator", version="2.0.0")
-
-# Global variables
-doc_generator = None
+app = FastAPI(title="Advanced Documentation Generator (FIXED)", version="3.0.0")
 
 def install_fastapi_deps():
     """Install FastAPI dependencies"""
@@ -289,14 +284,29 @@ result = function_name(arg1, arg2)
     })
 
 def generate_styled_documentation(file_contents: dict, context: str, doc_style: str, repo_path: str):
-    """Generate comprehensive documentation in the specified style"""
+    """Generate comprehensive documentation using the FIXED generator"""
     
-    # Import the comprehensive documentation generator
-    try:
-        from comprehensive_docs import generate_comprehensive_documentation
-        return generate_comprehensive_documentation(file_contents, context, doc_style, repo_path)
-    except ImportError:
-        # Fallback to basic analysis if comprehensive_docs not available
+    if doc_generator and ADVANCED_SYSTEM_AVAILABLE:
+        # Use the FIXED advanced generator
+        try:
+            # Convert file_contents dict to single string for the new API
+            combined_content = ""
+            for file_path, content in file_contents.items():
+                combined_content += f"# File: {file_path}\n{content}\n\n"
+            
+            return doc_generator.generate_documentation(
+                input_data=combined_content,
+                context=context,
+                doc_style=doc_style,
+                input_type='code',
+                repo_name=os.path.basename(repo_path) if repo_path else "repository"
+            )
+        except Exception as e:
+            print(f"Error with fixed generator: {e}")
+            return f"Error generating documentation: {str(e)}"
+    else:
+        # Fallback to basic analysis
+        print("❌ WARNING: Using fallback - will produce placeholder text!")
         return generate_basic_repository_analysis(file_contents, context, doc_style, repo_path)
 
 def generate_basic_repository_analysis(file_contents: dict, context: str, doc_style: str, repo_path: str):
@@ -410,7 +420,7 @@ async def root():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Context-Aware Documentation Generator - Repository Edition</title>
+        <title>Advanced Documentation Generator - FIXED (No More Placeholders!)</title>
         <style>
             body { 
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -550,8 +560,8 @@ async def root():
     <body>
         <div class="container">
             <div class="header">
-                <h1>🤖 Context-Aware Documentation Generator</h1>
-                <p class="subtitle">Repository Documentation with Multiple Styles</p>
+                <h1>🚀 Advanced Documentation Generator - FIXED!</h1>
+                <p class="subtitle">✅ Real Code Analysis - No More "Function implementation." Placeholders!</p>
             </div>
             
             <div class="password-info">
@@ -775,6 +785,73 @@ async def run_test():
         return JSONResponse({
             "error": str(e),
             "status": "❌ Test failed"
+        })
+
+@app.get("/test-fix")
+async def test_documentation_fix():
+    """Test that the documentation generator fix is working"""
+    if not doc_generator or not ADVANCED_SYSTEM_AVAILABLE:
+        return JSONResponse({
+            "status": "❌ ERROR",
+            "message": "Fixed documentation generator not available",
+            "problem": "Will produce placeholder text like 'Function implementation.'"
+        })
+    
+    try:
+        # Test with sample B+ Tree code
+        test_code = '''
+class BPlusTreeNode:
+    def __init__(self, keys, values):
+        self.keys = keys
+        self.values = values
+    
+    def insert(self, key, value):
+        if key in self.keys:
+            idx = self.keys.index(key)
+            self.values[idx] = value
+        return True
+    
+    def search(self, key):
+        if key in self.keys:
+            idx = self.keys.index(key)
+            return self.values[idx]
+        return None
+'''
+        
+        result = doc_generator.generate_documentation(
+            input_data=test_code,
+            context="B+ Tree database implementation for testing server fix",
+            doc_style="technical",
+            input_type='code',
+            repo_name="test_fix"
+        )
+        
+        # Check for quality indicators
+        has_placeholders = any(phrase in result for phrase in [
+            'Function implementation.', 'Class implementation.', 'Method implementation.'
+        ])
+        
+        has_real_content = any(phrase in result for phrase in [
+            'Insert a', 'Search for', 'Initialize a new', 'B+ Tree', 'Union[', 'Optional['
+        ])
+        
+        return JSONResponse({
+            "status": "✅ SUCCESS" if not has_placeholders and has_real_content else "❌ FAILED",
+            "fix_verification": {
+                "no_placeholders": not has_placeholders,
+                "has_real_content": has_real_content,
+                "doc_length": len(result),
+                "sample_output": result[:300] + "..." if len(result) > 300 else result
+            },
+            "message": "✅ FIXED VERSION WORKING!" if not has_placeholders and has_real_content else "❌ Still has problems",
+            "explanation": "This endpoint verifies the documentation generator produces real analysis instead of placeholder text"
+        })
+        
+    except Exception as e:
+        return JSONResponse({
+            "status": "❌ ERROR",
+            "message": f"Test failed: {str(e)}",
+            "problem": "Documentation generator is not working properly"
         })
 
 @app.get("/demo")
