@@ -15,13 +15,16 @@ from typing import Optional, List
 from fastapi import UploadFile as UploadedFile
 
 try:
-    from comprehensive_docs import generate_comprehensive_documentation
+    from comprehensive_docs_advanced import DocumentationGenerator
     DOCS_AVAILABLE = True
-    print("Generic documentation system loaded successfully")
+    print("Advanced documentation system loaded successfully")
+    # Initialize the generator
+    doc_generator = DocumentationGenerator()
 except ImportError as e:
     print(f"Warning: {e}")
     print("Running in demo mode")
     DOCS_AVAILABLE = False
+    doc_generator = None
 
 app = FastAPI(title="Generic Documentation Generator", version="2.0.0")
 
@@ -320,13 +323,22 @@ async def generate_documentation(
                 documentation = generator._generate_comprehensive_style(analysis, context, repo_name)
                 
         except ImportError:
-            # Fallback to basic generation
-            documentation = generate_comprehensive_documentation(
-                file_contents=file_contents,
-                context=context,
-                doc_style=doc_style,
-                repo_path=""
-            )
+            # Fallback to basic generation using new method
+            if doc_generator:
+                # Convert file_contents dict to single string for the new API
+                combined_content = ""
+                for file_path, content in file_contents.items():
+                    combined_content += f"# File: {file_path}\n{content}\n\n"
+                
+                documentation = doc_generator.generate_documentation(
+                    input_data=combined_content,
+                    context=context,
+                    doc_style=doc_style,
+                    input_type='code',
+                    repo_name=""
+                )
+            else:
+                documentation = "Documentation generator not available"
         
         return {
             "success": True,
@@ -417,12 +429,21 @@ async def generate_from_repo(
                     raise Exception("No Python files found in repository")
                 
                 # Generate documentation using enhanced system
-                documentation = generate_comprehensive_documentation(
-                    file_contents=file_contents,
-                    context=context,
-                    doc_style=doc_style,
-                    repo_path=temp_dir
-                )
+                if doc_generator:
+                    # Convert file_contents dict to single string for the new API
+                    combined_content = ""
+                    for file_path, content in file_contents.items():
+                        combined_content += f"# File: {file_path}\n{content}\n\n"
+                    
+                    documentation = doc_generator.generate_documentation(
+                        input_data=combined_content,
+                        context=context,
+                        doc_style=doc_style,
+                        input_type='code',
+                        repo_name=os.path.basename(temp_dir)
+                    )
+                else:
+                    documentation = "Documentation generator not available"
                 
                 return {
                     "success": True,
@@ -474,12 +495,16 @@ if __name__ == '__main__':
     
     try:
         if DOCS_AVAILABLE:
-            file_contents = {"app.py": test_code}
-            result = generate_comprehensive_documentation(
-                file_contents, 
-                "Flask web application for user management", 
-                "technical"
-            )
+            if doc_generator:
+                result = doc_generator.generate_documentation(
+                    input_data=test_code,
+                    context="Flask web application for user management",
+                    doc_style="technical",
+                    input_type='code',
+                    repo_name=""
+                )
+            else:
+                result = "Documentation generator not available"
             return JSONResponse({
                 "test_code": test_code,
                 "generated_docs": result,
