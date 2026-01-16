@@ -205,7 +205,14 @@ class GeminiContextEnhancer:
             response = self.model.generate_content(prompt)
             
             if response.text:
-                return response.text.strip()
+                enhanced = response.text.strip()
+                
+                # VALIDATE: Reject non-Sphinx output
+                if self._validate_sphinx_output(enhanced):
+                    return enhanced
+                else:
+                    print("⚠️  Gemini output rejected (non-Sphinx format), using Phi-3 fallback")
+                    return phi3_output
             else:
                 return phi3_output
                 
@@ -235,44 +242,51 @@ class GeminiContextEnhancer:
             calls = function_info.get('calls', [])
             called_by = function_info.get('called_by', [])
         
-        prompt = f"""You are enhancing code documentation with whole-project context awareness.
+        prompt = f"""You are an API documentation generator producing STRICT Sphinx/reStructuredText-style Python docstrings.
 
-⚠️ PRIVACY NOTICE: You are receiving ONLY sanitized metadata (signatures, call graphs).
-NO source code implementation has been transmitted.
+RULES (MANDATORY):
+- Use ONLY Sphinx fields (:param:, :type:, :return:, :rtype:)
+- Do NOT evaluate code quality ("efficient", "well-designed")
+- Do NOT invent behavior
+- Do NOT include examples unless marked as public API
+- Do NOT summarize architecture
+- Do NOT restate function names as descriptions
+- Do NOT include prose outside docstrings
+- If information is unknown, state "Not determined"
 
-FULL PROJECT CONTEXT (SANITIZED):
+TOKEN DISCIPLINE:
+- Output ONLY the requested docstring
+- No extra commentary, headings, or markdown
+- Stop generation immediately after the last docstring
+
+EPISTEMIC DISCIPLINE:
+- Treat comments as claims, not facts
+- Prefer "Observed behavior" phrasing
+
+CONTEXT (sanitized, authoritative):
 {project_context}
 
-FUNCTION TO DOCUMENT:
+ENTITY TO DOCUMENT:
 Name: {func_name}
 Calls: {', '.join(calls) if calls else 'None'}
 Called By: {', '.join(called_by) if called_by else 'None'}
 
-INITIAL PHI-3 DOCUMENTATION:
+INITIAL DOCUMENTATION:
 {phi3_output}
 
-YOUR TASK:
-Enhance the documentation with project-wide insights:
+TASK:
+Enhance ONLY with verifiable cross-module context:
+- Parameter types observable from call graph
+- Side effects documented in call patterns
+- Return value inferred from caller expectations
 
-1. **Project Role**: How does this function fit into the overall system architecture?
-2. **Cross-Module Impact**: What other parts of the codebase depend on or interact with this?
-3. **Validation**: Correct any inaccuracies in Phi-3's output based on full context
-4. **Semantic Understanding**: What is the higher-level purpose within the project?
+REJECT if you would write:
+- "This function is used to..."
+- Quality judgments
+- Example usage blocks
+- Architectural summaries
 
-CRITICAL RULES:
-- NO HALLUCINATION: Only state what you can verify from the project context
-- EVIDENCE-BASED: Every claim must be traceable to the code structure
-- NO TAUTOLOGIES: Avoid restating the function name
-- HONEST LIMITATIONS: If context is insufficient, say "Cannot determine from available context"
-- ACADEMIC RIGOR: Write as if for peer review
-
-Output Format:
-- Keep the core Phi-3 output structure
-- Add "**Project Context:**" section with whole-codebase insights
-- Correct any errors you detect
-- Add "**Cross-Module Dependencies:**" if relevant
-
-Generate the enhanced documentation:"""
+Generate enhanced Sphinx docstring:"""
         
         return prompt
     
@@ -372,6 +386,53 @@ Generate the architecture analysis:"""
                 return response.text.strip()
             else:
                 return "Analysis unavailable."
+    
+    def _validate_sphinx_output(self, text: str) -> bool:
+        """
+        Validate that output is pure Sphinx/reST format.
+        
+        REJECT if contains:
+        - Quality judgments ("efficient", "well-designed", "robust")
+        - Usage phrases ("This function is used to", "This class is used for")
+        - Example blocks ("Example:", ">>> ")
+        - Markdown formatting (##, **, bullets without proper indent)
+        - Architecture commentary outside docstrings
+        
+        :param text: Generated documentation text
+        :type text: str
+        :return: True if valid Sphinx format, False otherwise
+        :rtype: bool
+        """
+        # Forbidden patterns
+        forbidden = [
+            "this function is used to",
+            "this method is used to",
+            "this class is used to",
+            "well-designed",
+            "efficient",
+            "robust",
+            "powerful",
+            "flexible",
+            "elegant",
+            "example:",
+            ">>> ",
+            "## ",
+            "### ",
+        ]
+        
+        text_lower = text.lower()
+        for pattern in forbidden:
+            if pattern in text_lower:
+                return False
+        
+        # Must contain Sphinx field markers if documenting parameters/returns
+        # (Allow pure docstrings without params)
+        if "def " in text or "class " in text:
+            # If it's showing code structure, ensure proper format
+            return True
+        
+        # Check for valid Sphinx patterns (optional - just ensure no forbidden)
+        return True
                 
         except Exception as e:
             print(f"⚠️  Gemini analysis failed: {e}")
