@@ -14,10 +14,10 @@ from typing import Dict, List, Optional, Any
 try:
     import google.genai as genai  # type: ignore  # New package (replaces google.generativeai)
 except ImportError:
-    try:
-        import google.generativeai as genai  # type: ignore  # Fallback to old package
-    except ImportError:
-        genai = None
+    genai = None
+    print("⚠️  Google Gemini package not installed.")
+    print("   Install the NEW package: pip install google-genai")
+    print("   (NOT google-generativeai - that package is deprecated)")
 
 from config import GEMINI_API_KEY, GEMINI_MODEL, GEMINI_TEMPERATURE, GEMINI_MAX_TOKENS
 from data_sanitizer import DataSanitizer
