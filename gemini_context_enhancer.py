@@ -386,6 +386,9 @@ Generate the architecture analysis:"""
                 return response.text.strip()
             else:
                 return "Analysis unavailable."
+        except Exception as e:
+            print(f"⚠️ Gemini architecture analysis failed: {e}")
+            return "Architecture analysis unavailable."
     
     def _validate_sphinx_output(self, text: str) -> bool:
         """
@@ -433,10 +436,6 @@ Generate the architecture analysis:"""
         
         # Check for valid Sphinx patterns (optional - just ensure no forbidden)
         return True
-                
-        except Exception as e:
-            print(f"⚠️  Gemini analysis failed: {e}")
-            return "Analysis failed."
 
 
 # Global instance
