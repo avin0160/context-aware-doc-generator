@@ -45,9 +45,13 @@ API_PORT = 8000
 # Gemini API Configuration
 # Get your API key from: https://makersuite.google.com/app/apikey
 GEMINI_API_KEY = "AIzaSyBDvgGbMzK12YKBH1eT3oJdBBC00G3cXtA"  # Replace with your actual API key
-GEMINI_MODEL = "gemini-pro"  # Fixed: Use "gemini-pro" for v1beta API
+GEMINI_MODEL = "gemini-1.5-flash"  # Updated to current model (gemini-pro deprecated)
 GEMINI_TEMPERATURE = 0.3
 GEMINI_MAX_TOKENS = 8192  # Increased from 2048 for larger projects
+
+# Phi-3 Model Configuration
+PHI3_MODEL = "microsoft/Phi-3-mini-4k-instruct"
+TRANSFORMERS_MIN_VERSION = "4.41.0"  # Minimum transformers version for Phi-3 support
 
 # Streamlit Configuration
 STREAMLIT_PORT = 8501

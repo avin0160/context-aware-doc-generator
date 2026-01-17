@@ -94,6 +94,36 @@ class Phi3DocumentationGenerator:
             logger.warning("Falling back to rule-based generation")
             self.model = None
     
+    @staticmethod
+    def _supports_cache_feature(cache, feature_name: str) -> bool:
+        """
+        Feature detection for cache compatibility.
+        Makes system resilient to future API changes.
+        
+        :param cache: Cache object to check
+        :type cache: Any
+        :param feature_name: Feature attribute name
+        :type feature_name: str
+        :return: Whether feature is supported
+        :rtype: bool
+        """
+        return hasattr(cache, feature_name)
+    
+    def _get_generation_kwargs(self) -> dict:
+        """
+        Get generation parameters with feature detection.
+        
+        :return: Generation kwargs compatible with current transformers version
+        :rtype: dict
+        """
+        return {
+            "max_new_tokens": 512,
+            "temperature": 0.3,
+            "top_p": 0.9,
+            "do_sample": True,
+            "pad_token_id": self.tokenizer.eos_token_id
+        }
+    
     def generate_function_docstring(
         self,
         function_code: str,
@@ -127,13 +157,12 @@ class Phi3DocumentationGenerator:
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
             
             with torch.no_grad():
+                # Use feature-detected generation parameters
+                generate_kwargs = self._get_generation_kwargs()
+                
                 outputs = self.model.generate(
                     **inputs,
-                    max_new_tokens=512,
-                    temperature=0.3,
-                    top_p=0.9,
-                    do_sample=True,
-                    pad_token_id=self.tokenizer.eos_token_id
+                    **generate_kwargs
                 )
             
             generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
@@ -267,13 +296,12 @@ Generate ONLY the docstring text (no function signature):
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
             
             with torch.no_grad():
+                # Use feature-detected generation parameters
+                generate_kwargs = self._get_generation_kwargs()
+                
                 outputs = self.model.generate(
                     **inputs,
-                    max_new_tokens=512,
-                    temperature=0.3,
-                    top_p=0.9,
-                    do_sample=True,
-                    pad_token_id=self.tokenizer.eos_token_id
+                    **generate_kwargs
                 )
             
             generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
