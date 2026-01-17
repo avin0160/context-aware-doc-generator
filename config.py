@@ -45,7 +45,7 @@ API_PORT = 8000
 # Gemini API Configuration
 # Get your API key from: https://makersuite.google.com/app/apikey
 GEMINI_API_KEY = "AIzaSyBDvgGbMzK12YKBH1eT3oJdBBC00G3cXtA"  # Replace with your actual API key
-GEMINI_MODEL = "gemini-1.5-flash"  # Updated to current model (gemini-pro deprecated)
+GEMINI_MODEL = "models/gemini-2.5-flash"  # Using latest stable flash model
 GEMINI_TEMPERATURE = 0.3
 GEMINI_MAX_TOKENS = 8192  # Increased from 2048 for larger projects
 
