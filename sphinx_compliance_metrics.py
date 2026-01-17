@@ -208,17 +208,46 @@ class ForbiddenLanguageValidator:
         :rtype: bool
         """
         # Normalize names: snake_case/camelCase to words
-        name_words = set(re.findall(r'[A-Z][a-z]+|[a-z]+', func_name.replace('_', '')))
+        # e.g., "draw_cube" → ["draw", "cube"], "DrawCube" → ["Draw", "Cube"]
+        name_words = set()
+        
+        # Handle snake_case
+        if '_' in func_name:
+            name_words.update(word.lower() for word in func_name.split('_'))
+        # Handle camelCase/PascalCase
+        else:
+            camel_words = re.findall(r'[A-Z]?[a-z]+|[A-Z]+(?=[A-Z]|$)', func_name)
+            name_words.update(word.lower() for word in camel_words if word)
+        
+        # Extract words from description
         desc_words = set(re.findall(r'\b\w+\b', description.lower()))
         
-        # If description is just rearranged function name words
-        if name_words and name_words.issubset(desc_words):
-            # Check if description adds meaningful information
-            meaningful_words = desc_words - name_words - {
-                'a', 'an', 'the', 'is', 'are', 'to', 'for', 'of', 'in', 'on', 'at', 'by', 'with'
-            }
-            if len(meaningful_words) < 2:
-                return True  # Tautology detected
+        # Remove stop words
+        stop_words = {
+            'a', 'an', 'the', 'is', 'are', 'to', 'for', 'of', 'in', 'on', 'at', 'by', 'with',
+            'this', 'that', 'function', 'method', 'class'
+        }
+        
+        meaningful_desc_words = desc_words - stop_words
+        
+        # Check if description is just rearranged function name
+        if name_words and name_words.issubset(meaningful_desc_words):
+            # Count how many additional meaningful words are present
+            additional_words = meaningful_desc_words - name_words
+            
+            # If fewer than 2 additional words, it's tautological
+            # e.g., "draw_cube" + "Draw the cube" = only adds "the" (stop word) = TAUTOLOGY
+            if len(additional_words) < 2:
+                return True
+        
+        # Check for direct repetition: "draw draws" or "cube cubes cube"
+        for name_word in name_words:
+            # Count occurrences in description
+            pattern = rf'\b{re.escape(name_word)}\w*\b'
+            occurrences = len(re.findall(pattern, description.lower()))
+            # If a name word appears 2+ times, it's tautological
+            if occurrences >= 2:
+                return True
         
         return False
 
