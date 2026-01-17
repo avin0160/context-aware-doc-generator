@@ -1064,12 +1064,14 @@ async def generate_docs(
                 })
             
             if repo_url.startswith(('http://', 'https://')) and ('github.com' in repo_url or 'gitlab.com' in repo_url):
-                # Clone Git repository
+                # Clone Git repository with shallow clone for speed
                 print(f"🔄 Cloning repository: {repo_url}")
+                print("   Using --depth=1 for faster cloning (shallow clone)")
                 temp_dir = tempfile.mkdtemp()
                 try:
-                    result = subprocess.run(['git', 'clone', repo_url, temp_dir], 
-                                         check=True, capture_output=True, text=True, timeout=120)
+                    # Use --depth=1 for shallow clone (faster for large repos)
+                    result = subprocess.run(['git', 'clone', '--depth=1', repo_url, temp_dir], 
+                                         check=True, capture_output=True, text=True, timeout=600)
                     repo_path = temp_dir
                     print(f"✅ Repository cloned to: {repo_path}")
                 except subprocess.CalledProcessError as e:
@@ -1079,8 +1081,9 @@ async def generate_docs(
                     })
                 except subprocess.TimeoutExpired:
                     return JSONResponse({
-                        "error": "Repository cloning timed out (>2 minutes)",
-                        "status": "❌ Clone timeout"
+                        "error": "Repository cloning timed out (>10 minutes). Repository may be too large.",
+                        "status": "❌ Clone timeout",
+                        "suggestion": "Try using a local clone or smaller repository"
                     })
             
             elif repo_url.endswith('.zip') and os.path.exists(repo_url):

@@ -154,9 +154,20 @@ class PythonParser:
                         annotations=[]
                     )
                     functions.append(func_info)
+        except SyntaxError as e:
+            # Syntax error in the actual Python file (not our code)
+            print(f"⚠️  WARNING: {file_path} has syntax errors (line {e.lineno if hasattr(e, 'lineno') else 'unknown'})")
+            print(f"   Reason: The Python file itself contains invalid syntax.")
+            print(f"   This happens when:")
+            print(f"     - File is auto-generated or corrupted")
+            print(f"     - File contains Python 2 syntax in Python 3")
+            print(f"     - File has encoding issues")
+            print(f"   Solution: Fix syntax errors in the source file, or exclude it from documentation.")
+            # Return empty to skip this broken file
+            return []
         except Exception as e:
-            print(f"⚠️ WARNING: Skipping {file_path} due to parse error at line {e}")
-            print(f"   This file will be excluded from documentation.")
+            # Other errors - log but continue
+            print(f"⚠️  WARNING: Could not parse {file_path}: {type(e).__name__}: {e}")
             # Return empty list to skip this file
             return []
         
@@ -219,9 +230,12 @@ class PythonParser:
                         annotations=[ast.unparse(d) for d in node.decorator_list]
                     )
                     classes.append(class_info)
+        except SyntaxError as e:
+            # Syntax error in the actual Python file
+            print(f"⚠️  WARNING: {file_path} has syntax errors (cannot parse classes)")
+            return []
         except Exception as e:
-            print(f"⚠️ WARNING: Skipping classes in {file_path} due to parse error")
-            # Return empty list to skip this file's classes
+            print(f"⚠️  WARNING: Could not parse classes in {file_path}: {type(e).__name__}")
             return []
         
         return classes
