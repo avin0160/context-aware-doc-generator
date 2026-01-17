@@ -60,6 +60,14 @@ except ImportError:
     PHI3_AVAILABLE = False
     print("Phi-3 generator not available, using fallback documentation generation")
 
+# Import Sphinx compliance metrics for validation
+try:
+    from sphinx_compliance_metrics import DocumentationEvaluator
+    METRICS_AVAILABLE = True
+except ImportError:
+    METRICS_AVAILABLE = False
+    print("Sphinx compliance metrics not available, skipping validation")
+
 @dataclass
 class FunctionInfo:
     """Detailed function information"""
@@ -125,6 +133,15 @@ class CodeSearchNetEnhancedAnalyzer:
                 print("✅ Phi-3 Mini documentation generator initialized")
             except Exception as e:
                 print(f"⚠️  Could not initialize Phi-3: {e}")
+        
+        # Initialize documentation validator
+        self.doc_evaluator = None
+        if METRICS_AVAILABLE:
+            try:
+                self.doc_evaluator = DocumentationEvaluator(max_tokens=512)
+                print("✅ Sphinx compliance validator initialized")
+            except Exception as e:
+                print(f"⚠️  Could not initialize validator: {e}")
         
         # Load CodeSearchNet patterns if available
         if ADVANCED_FEATURES:
@@ -1259,14 +1276,63 @@ class DocumentationGenerator:
         
         # Generate documentation based on style (only 3 styles supported)
         if doc_style == 'sphinx':
-            return self._generate_sphinx_style(analysis, context, repo_name)
+            documentation = self._generate_sphinx_style(analysis, context, repo_name)
         elif doc_style in ['technical_comprehensive', 'technical', 'comprehensive']:
-            return self._generate_technical_comprehensive_style(analysis, context, repo_name)
+            documentation = self._generate_technical_comprehensive_style(analysis, context, repo_name)
         elif doc_style == 'opensource':
-            return self._generate_opensource_style(analysis, context, repo_name)
+            documentation = self._generate_opensource_style(analysis, context, repo_name)
         else:
             # Default to Sphinx/reST style
-            return self._generate_sphinx_style(analysis, context, repo_name)
+            documentation = self._generate_sphinx_style(analysis, context, repo_name)
+        
+        # VALIDATION: Run compliance check (only for Sphinx style)
+        if self.doc_evaluator and doc_style == 'sphinx':
+            try:
+                # Extract observed info from analysis for validation
+                observed_info = {
+                    'parameters': [],
+                    'has_return': False,
+                    'attributes': []
+                }
+                # Aggregate all observable facts
+                for file_info in analysis.get('file_analysis', {}).values():
+                    for func in file_info.get('functions', []):
+                        observed_info['parameters'].extend(func.args)
+                        if func.return_type and func.return_type != 'None':
+                            observed_info['has_return'] = True
+                    for cls in file_info.get('classes', []):
+                        observed_info['attributes'].extend(cls.attributes)
+                
+                # Validate documentation
+                report = self.doc_evaluator.evaluate(
+                    documentation, 
+                    observed_info, 
+                    repo_name
+                )
+                
+                # Print validation report
+                print("\n" + "="*60)
+                print("📊 SPHINX COMPLIANCE VALIDATION")
+                print("="*60)
+                print(report)
+                print("="*60 + "\n")
+                
+                # If validation fails, append warning to documentation
+                if not report.accepted:
+                    warning = f"\n\n---\n\n**⚠️ DOCUMENTATION QUALITY WARNING**\n\n"
+                    warning += "This documentation did NOT pass Sphinx compliance validation:\n\n"
+                    if report.details.get('sphinx_violations'):
+                        warning += "- Format violations: " + ", ".join(report.details['sphinx_violations'][:3]) + "\n"
+                    if report.details.get('language_violations'):
+                        warning += "- Language violations: " + ", ".join(report.details['language_violations'][:3]) + "\n"
+                    if report.details.get('epistemic_violations'):
+                        warning += "- Epistemic violations: " + ", ".join(report.details['epistemic_violations'][:3]) + "\n"
+                    documentation += warning
+                
+            except Exception as e:
+                print(f"⚠️  Validation failed: {e}")
+        
+        return documentation
     
     def _generate_sphinx_style(self, analysis: Dict[str, Any], context: str, repo_name: str) -> str:
         """Sphinx/reST style - Professional Python documentation with :param:, :type:, :return:, :rtype: tags
