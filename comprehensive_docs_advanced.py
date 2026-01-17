@@ -1152,6 +1152,15 @@ class DocumentationGenerator:
         self.analyzer = AdvancedRepositoryAnalyzer()
         # Expose phi3_generator for direct access
         self.phi3_generator = self.analyzer.phi3_generator if hasattr(self.analyzer, 'phi3_generator') else None
+        
+        # Initialize documentation validator
+        self.doc_evaluator = None
+        if METRICS_AVAILABLE:
+            try:
+                self.doc_evaluator = DocumentationEvaluator(max_tokens=512)
+                print("✅ DocumentationGenerator: Sphinx compliance validator initialized")
+            except Exception as e:
+                print(f"⚠️  DocumentationGenerator: Could not initialize validator: {e}")
     
     def _infer_project_name(self, provided_name: str, analysis: Dict[str, Any], context: str) -> str:
         """Intelligently infer project name avoiding generic temp names"""
