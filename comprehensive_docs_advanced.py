@@ -1352,24 +1352,22 @@ class DocumentationGenerator:
         repo_name = self._infer_project_name(repo_name, analysis, context)
         project_type = analysis['project_type'].replace('_', ' ').title()
         
-        doc = f"""# {repo_name} - API Documentation
+        # Pure Sphinx/reST format - no Markdown mixing
+        doc = f"""{repo_name} API Documentation
+{"="*len(f"{repo_name} API Documentation")}
 
-**Documentation Style**: Sphinx/reST - Professional Python API documentation
+{context or f"Complete API reference for {repo_name}."}
 
----
+Project Information
+-------------------
 
-## Overview
+:Project Type: {project_type}
+:Total Files: {analysis['total_files']}
+:Functions: {analysis['complexity_metrics']['total_functions']}
+:Classes: {analysis['complexity_metrics']['total_classes']}
 
-{context or f"API documentation for the {repo_name} project."}
-
-**Project Type:** {project_type}  
-**Total Files:** {analysis['total_files']}  
-**Functions:** {analysis['complexity_metrics']['total_functions']}  
-**Classes:** {analysis['complexity_metrics']['total_classes']}  
-
----
-
-## API Reference
+API Reference
+-------------
 
 """
         
@@ -1378,7 +1376,7 @@ class DocumentationGenerator:
             if not file_info.get('functions') and not file_info.get('classes'):
                 continue
                 
-            doc += f"### Module: `{file_path}`\n\n"
+            doc += f"{file_path}\n{'~'*len(file_path)}\n\n"
             
             # Document classes first
             for cls in file_info.get('classes', []):
@@ -1392,15 +1390,19 @@ class DocumentationGenerator:
     
     def _generate_sphinx_class_doc(self, cls, file_info: Dict[str, Any], analysis: Dict[str, Any]) -> str:
         """Generate Sphinx-style class documentation"""
-        doc = f"#### Class: `{cls.name}`\n\n"
+        doc = f".. class:: {cls.name}\n\n"
         
+        # Indented docstring content
         if cls.docstring:
-            doc += f"{cls.docstring}\n\n"
+            for line in cls.docstring.split('\n'):
+                doc += f"   {line}\n"
         else:
-            doc += f"A class representing {cls.name.replace('_', ' ').lower()}\n\n"
+            doc += f"   {cls.name.replace('_', ' ')} class.\n"
+        
+        doc += "\n"
         
         if cls.inheritance:
-            doc += f":Inherits: {', '.join(cls.inheritance)}\n\n"
+            doc += f"   **Inherits from:** {', '.join(cls.inheritance)}\n\n"
         
         # Document methods
         for method in cls.methods:
@@ -1411,26 +1413,29 @@ class DocumentationGenerator:
     def _generate_sphinx_function_doc(self, func, file_info: Dict[str, Any], analysis: Dict[str, Any], is_method=False) -> str:
         """Generate Sphinx-style function/method documentation"""
         
-        prefix = "Method" if is_method else "Function"
-        doc = f"##### {prefix}: `{func.name}`\n\n"
-        
         # Function signature
         if func.args:
             args_str = ', '.join(func.args)
         else:
             args_str = ""
         
-        doc += f"```python\ndef {func.name}({args_str}):\n"
-        doc += f"    ...\n"
-        doc += f"```\n\n"
+        doc = f".. {'method' if is_method else 'function'}:: {func.name}({args_str})\n\n"
         
-        # Description
+        # Indented description
         if func.docstring and len(func.docstring) > 50:
-            doc += f"{func.docstring}\n\n"
+            for line in func.docstring.split('\n'):
+                doc += f"   {line}\n"
         else:
             behavior = self._describe_observed_behavior(func, file_info, analysis)
             if behavior and not self._is_tautological(behavior, func.name):
-                doc += f"{behavior}\n\n"
+                for line in behavior.split('\n'):
+                    doc += f"   {line}\n"
+            else:
+                # Minimal but informative description
+                func_name_clean = func.name.replace('_', ' ').capitalize()
+                doc += f"   {func_name_clean}.\n"
+        
+        doc += "\n"
         
         # Parameters - Sphinx/reST style
         if func.args:
@@ -1447,22 +1452,9 @@ class DocumentationGenerator:
         return_type = func.return_type or "None"
         if return_type and return_type != "None":
             doc += f":return: {self._infer_return_purpose(func, return_type)}\n"
-            doc += f":rtype: {return_type}\n\n"
+            doc += f":rtype: {return_type}\n"
         
-        # Example
-        doc += f"**Example:**\n\n"
-        doc += f"```python\n"
-        if func.args and func.args[0] not in ['self', 'cls']:
-            example_args = ', '.join(self._generate_example_arg(arg) for arg in func.args if arg not in ['self', 'cls'])
-            returns_value = return_type and return_type not in ['None', 'NoneType']
-            if returns_value:
-                doc += f"result = {func.name}({example_args})\n"
-            else:
-                doc += f"{func.name}({example_args})\n"
-        else:
-            doc += f"{func.name}()\n"
-        doc += f"```\n\n"
-        
+        doc += "\n"
         return doc
     
     def _generate_google_style(self, analysis: Dict[str, Any], context: str, repo_name: str) -> str:
@@ -3981,49 +3973,116 @@ For further information, consult the inline code documentation and comments with
         """Infer argument type based on name patterns"""
         arg_lower = arg_name.lower()
         
-        if 'id' in arg_lower or '_id' in arg_lower:
-            return "int or str"
+        # Specific coordinate types
+        if arg_lower in ['x', 'y', 'row', 'col', 'column']:
+            return "int"
+        elif 'coord' in arg_lower or 'pos' in arg_lower or 'position' in arg_lower:
+            return "Tuple[int, int]"
+        # IDs and keys
+        elif '_id' in arg_lower or arg_lower.endswith('id'):
+            return "str"
         elif 'name' in arg_lower or 'key' in arg_lower:
             return "str"
-        elif 'count' in arg_lower or 'size' in arg_lower or 'index' in arg_lower:
+        elif 'count' in arg_lower or 'size' in arg_lower or 'index' in arg_lower or 'num' in arg_lower:
             return "int"
-        elif 'flag' in arg_lower or 'is_' in arg_lower or 'has_' in arg_lower:
+        elif 'flag' in arg_lower or arg_lower.startswith('is_') or arg_lower.startswith('has_') or 'enabled' in arg_lower:
             return "bool"
-        elif 'list' in arg_lower or 'items' in arg_lower:
-            return "list"
-        elif 'dict' in arg_lower or 'map' in arg_lower or 'config' in arg_lower:
-            return "dict"
+        elif 'list' in arg_lower or 'items' in arg_lower or 'entries' in arg_lower:
+            return "List"
+        elif 'dict' in arg_lower or 'map' in arg_lower or 'mapping' in arg_lower:
+            return "Dict"
+        elif 'config' in arg_lower or 'settings' in arg_lower:
+            return "Dict[str, Any]"
         elif 'data' in arg_lower:
-            return "Any"
-        elif 'path' in arg_lower or 'file' in arg_lower:
-            return "str or Path"
+            return "bytes or str"
+        elif 'path' in arg_lower or 'file' in arg_lower or 'dir' in arg_lower:
+            return "str"
+        elif 'url' in arg_lower:
+            return "str"
+        elif 'text' in arg_lower or 'message' in arg_lower or 'content' in arg_lower:
+            return "str"
+        elif 'color' in arg_lower or 'colour' in arg_lower:
+            return "Tuple[int, int, int]"
+        elif 'self' in arg_lower:
+            return "Self"
+        elif 'cls' in arg_lower:
+            return "Type"
         else:
-            return "Any"
+            # Look at function name for context
+            func_name = func.name.lower()
+            if 'parse' in func_name or 'load' in func_name:
+                return "str"
+            elif 'process' in func_name or 'handle' in func_name:
+                return "object"
+            return "str"
     
     def _infer_argument_purpose(self, arg_name: str, func) -> str:
         """Infer the purpose of an argument from its name"""
         arg_lower = arg_name.lower()
         
-        if 'screen' in arg_lower or 'surface' in arg_lower:
-            return "The pygame surface to draw on"
-        elif any(coord in arg_lower for coord in ['x', 'y', 'pos', 'position']):
-            return "Position coordinate"
+        # Coordinate parameters
+        if arg_lower == 'x':
+            return "Horizontal coordinate"
+        elif arg_lower == 'y':
+            return "Vertical coordinate"
+        elif 'row' in arg_lower:
+            return "Row index in grid"
+        elif 'col' in arg_lower:
+            return "Column index in grid"
+        elif 'pos' in arg_lower or 'position' in arg_lower:
+            return "Position tuple (x, y)"
+        # Display parameters
+        elif 'screen' in arg_lower or 'surface' in arg_lower:
+            return "Rendering surface"
         elif 'color' in arg_lower or 'colour' in arg_lower:
-            return "RGB color tuple"
+            return "RGB color tuple (red, green, blue)"
+        # Data structures
         elif 'shape' in arg_lower:
-            return "Shape data structure"
+            return "Shape configuration matrix"
         elif 'board' in arg_lower or 'grid' in arg_lower or 'field' in arg_lower:
-            return "Game board/grid data"
-        elif 'data' in arg_lower:
-            return "Input data to process"
+            return "Game state matrix"
+        elif 'tree' in arg_lower or 'node' in arg_lower:
+            return "Syntax tree node"
+        # File operations
+        elif 'path' in arg_lower:
+            return "Filesystem path"
+        elif 'file' in arg_lower:
+            return "File object or path"
+        elif 'dir' in arg_lower:
+            return "Directory path"
+        # Configuration
         elif 'config' in arg_lower or 'settings' in arg_lower:
-            return "Configuration parameters"
-        elif 'file' in arg_lower or 'path' in arg_lower:
-            return "File path or file object"
-        elif 'text' in arg_lower or 'str' in arg_lower or 'message' in arg_lower:
-            return "Text or string content"
+            return "Configuration dictionary"
+        elif 'options' in arg_lower:
+            return "Optional parameters"
+        # Text content
+        elif 'content' in arg_lower:
+            return "Text content"
+        elif 'text' in arg_lower or 'message' in arg_lower:
+            return "Text string"
+        elif 'name' in arg_lower:
+            return "Identifier name"
+        elif 'key' in arg_lower:
+            return "Dictionary key"
+        # Data processing
+        elif 'data' in arg_lower:
+            return "Input data"
+        elif 'code' in arg_lower:
+            return "Source code string"
+        elif 'context' in arg_lower:
+            return "Contextual information"
+        # Boolean flags
+        elif arg_lower.startswith('is_') or arg_lower.startswith('has_'):
+            return f"Whether {arg_name[3:].replace('_', ' ')}"
+        elif 'flag' in arg_lower or 'enabled' in arg_lower:
+            return f"Enable/disable {arg_name.replace('_flag', '').replace('_', ' ')}"
+        # Generic but informative
         else:
-            return f"Parameter for {arg_name.replace('_', ' ')}"
+            # Avoid tautology - don't just repeat the parameter name
+            cleaned = arg_name.replace('_', ' ').strip()
+            if cleaned == 'self' or cleaned == 'cls':
+                return "Instance reference"
+            return f"{cleaned.capitalize()} value"
     
     def _infer_return_purpose(self, func, return_type: str) -> str:
         """Infer what the return value represents"""
