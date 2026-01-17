@@ -120,6 +120,14 @@ def create_tunnel(port=8000):
     """Create ngrok tunnel"""
     try:
         from pyngrok import ngrok
+        
+        # Kill any existing tunnels to avoid "endpoint already online" error
+        try:
+            ngrok.kill()
+            print("🔄 Cleaned up existing ngrok tunnels")
+        except:
+            pass
+        
         tunnel = ngrok.connect(port)
         public_url = tunnel.public_url
         print(f"\n🌐 Public URL: {public_url}")
@@ -127,11 +135,16 @@ def create_tunnel(port=8000):
         return tunnel
     except Exception as e:
         print(f"[ERROR] Failed to create tunnel: {e}")
+        print("[TIP] If error persists, manually run: pkill ngrok (Linux/Mac) or taskkill /F /IM ngrok.exe (Windows)")
         return None
 
+# DISABLED: Causes double initialization of Phi-3 (takes ~1 minute extra)
+# Already initialized at module import time (lines 30-66)
+# Uncomment only if you need lazy loading
+"""
 @app.on_event("startup")
 async def startup_event():
-    """Initialize the generator on startup"""
+    '''Initialize the generator on startup'''
     global generator, rag_pipeline
     
     print("🚀 Starting Context-Aware Documentation Generator...")
@@ -139,7 +152,7 @@ async def startup_event():
     # Initialize documentation generator
     if ADVANCED_SYSTEM_AVAILABLE:
         try:
-            print("� Initializing Advanced Documentation Generator...")
+            print("📝 Initializing Advanced Documentation Generator...")
             doc_generator = DocumentationGenerator()
             print("✅ Advanced documentation system ready")
         except Exception as e:
@@ -148,6 +161,7 @@ async def startup_event():
     else:
         print("⚠️ Running in basic mode")
         doc_generator = None
+"""
 
 async def analyze_repository_structure(repo_path: str, context: str, doc_style: str):
     """Analyze repository structure and generate documentation"""
