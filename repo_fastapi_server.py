@@ -1074,6 +1074,14 @@ async def generate_docs(
                                          check=True, capture_output=True, text=True, timeout=600)
                     repo_path = temp_dir
                     print(f"✅ Repository cloned to: {repo_path}")
+                    
+                    # Remove .git directory - we don't need version control files for documentation
+                    git_dir = os.path.join(temp_dir, '.git')
+                    if os.path.exists(git_dir):
+                        import shutil
+                        shutil.rmtree(git_dir)
+                        print("🗑️  Removed .git directory (version control files not needed)")
+                    
                 except subprocess.CalledProcessError as e:
                     return JSONResponse({
                         "error": f"Failed to clone repository: {e.stderr if e.stderr else str(e)}",

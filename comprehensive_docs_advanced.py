@@ -1096,9 +1096,15 @@ class MultiInputHandler:
         temp_dir = tempfile.mkdtemp()
         
         try:
-            # Clone repository
-            subprocess.run(['git', 'clone', repo_url, temp_dir], 
-                         check=True, capture_output=True)
+            # Shallow clone for speed (only latest commit, no history)
+            subprocess.run(['git', 'clone', '--depth=1', repo_url, temp_dir], 
+                         check=True, capture_output=True, timeout=600)
+            
+            # Remove .git directory - we don't need version control files
+            git_dir = os.path.join(temp_dir, '.git')
+            if os.path.exists(git_dir):
+                import shutil
+                shutil.rmtree(git_dir)
             
             # Extract Python files
             file_contents = {}
