@@ -1352,11 +1352,16 @@ class DocumentationGenerator:
         repo_name = self._infer_project_name(repo_name, analysis, context)
         project_type = analysis['project_type'].replace('_', ' ').title()
         
-        # Pure Sphinx/reST format - no Markdown mixing
-        doc = f"""{repo_name} API Documentation
+        # Pure Sphinx/reST format - wrap everything in proper directive structure
+        doc = f""".. _{repo_name.replace(' ', '_').lower()}_api:
+
+{repo_name} API Documentation
 {"="*len(f"{repo_name} API Documentation")}
 
-{context or f"Complete API reference for {repo_name}."}
+.. module:: {repo_name.lower().replace(' ', '_')}
+   :synopsis: {context or f"Complete API reference for {repo_name}."}
+
+.. moduleauthor:: Auto-generated
 
 Project Information
 -------------------

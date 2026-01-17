@@ -155,7 +155,10 @@ class PythonParser:
                     )
                     functions.append(func_info)
         except Exception as e:
-            print(f"Error parsing Python file {file_path}: {e}")
+            print(f"⚠️ WARNING: Skipping {file_path} due to parse error at line {e}")
+            print(f"   This file will be excluded from documentation.")
+            # Return empty list to skip this file
+            return []
         
         return functions
     
@@ -217,7 +220,9 @@ class PythonParser:
                     )
                     classes.append(class_info)
         except Exception as e:
-            print(f"Error parsing Python classes in {file_path}: {e}")
+            print(f"⚠️ WARNING: Skipping classes in {file_path} due to parse error")
+            # Return empty list to skip this file's classes
+            return []
         
         return classes
 
