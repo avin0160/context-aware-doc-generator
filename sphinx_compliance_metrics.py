@@ -11,12 +11,14 @@ Metric Hierarchy:
 3. Consistency Score - Cross-reference validation
 4. Non-Tautology Score - Information density
 5. Brevity Efficiency - Token usage optimization
+6. BLEU Score (REFERENCE) - N-gram similarity to gold standard (optional)
 """
 
 import re
+import math
 from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass
-from collections import defaultdict
+from collections import defaultdict, Counter
 
 
 @dataclass
@@ -48,27 +50,33 @@ class QualityScores:
     consistency: float        # 0.0-1.0
     non_tautology: float      # 0.0-1.0
     brevity_efficiency: float # 0.0-1.0
+    bleu_score: Optional[float] = None  # 0.0-1.0 (if reference provided)
     
     @property
     def overall_quality(self) -> float:
         """Weighted average (evidence coverage is most important)"""
-        return (
+        base_score = (
             0.50 * self.evidence_coverage +
             0.20 * self.consistency +
             0.20 * self.non_tautology +
             0.10 * self.brevity_efficiency
         )
+        # If BLEU available, blend it in (bonus for matching gold standard)
+        if self.bleu_score is not None:
+            return 0.85 * base_score + 0.15 * self.bleu_score
+        return base_score
     
     def __str__(self) -> str:
-        return f"""
+        result = f"""
 Quality Scores:
   - Evidence Coverage: {self.evidence_coverage:.2%} (weight: 50%)
   - Consistency: {self.consistency:.2%} (weight: 20%)
   - Non-Tautology: {self.non_tautology:.2%} (weight: 20%)
-  - Brevity Efficiency: {self.brevity_efficiency:.2%} (weight: 10%)
-  
-  Overall Quality: {self.overall_quality:.2%}
-"""
+  - Brevity Efficiency: {self.brevity_efficiency:.2%} (weight: 10%)"""
+        if self.bleu_score is not None:
+            result += f"\n  - BLEU Score: {self.bleu_score:.2%} (bonus: 15%)"
+        result += f"\n  \n  Overall Quality: {self.overall_quality:.2%}\n"
+        return result
 
 
 @dataclass
@@ -514,6 +522,87 @@ class BrevityCalculator:
         return (brevity, details)
 
 
+class BLEUCalculator:
+    """
+    Metric 6: BLEU Score (Optional Reference-Based)
+    
+    Measures n-gram similarity to gold standard documentation.
+    """
+    
+    @staticmethod
+    def tokenize(text: str) -> List[str]:
+        """Tokenize text into words"""
+        return re.findall(r'\w+', text.lower())
+    
+    @staticmethod
+    def calculate_ngrams(tokens: List[str], n: int) -> Counter:
+        """Generate n-grams from tokens"""
+        ngrams = []
+        for i in range(len(tokens) - n + 1):
+            ngrams.append(tuple(tokens[i:i+n]))
+        return Counter(ngrams)
+    
+    @classmethod
+    def calculate(cls, reference: str, candidate: str, max_n: int = 4) -> Tuple[float, Dict[str, Any]]:
+        """
+        Calculate BLEU score.
+        
+        :param reference: Reference documentation (gold standard)
+        :type reference: str
+        :param candidate: Generated documentation
+        :type candidate: str
+        :param max_n: Maximum n-gram size (default 4)
+        :type max_n: int
+        :return: (bleu_score, details)
+        :rtype: Tuple[float, Dict[str, Any]]
+        """
+        ref_tokens = cls.tokenize(reference)
+        cand_tokens = cls.tokenize(candidate)
+        
+        if not cand_tokens:
+            return (0.0, {'error': 'Empty candidate'})
+        
+        # Calculate brevity penalty
+        bp = 1.0
+        if len(cand_tokens) < len(ref_tokens):
+            bp = math.exp(1 - len(ref_tokens) / len(cand_tokens))
+        
+        # Calculate precision for each n-gram
+        precisions = []
+        for n in range(1, max_n + 1):
+            ref_ngrams = cls.calculate_ngrams(ref_tokens, n)
+            cand_ngrams = cls.calculate_ngrams(cand_tokens, n)
+            
+            if not cand_ngrams:
+                precisions.append(0.0)
+                continue
+            
+            # Count matching n-grams
+            matches = sum((cand_ngrams & ref_ngrams).values())
+            total = sum(cand_ngrams.values())
+            
+            precision = matches / total if total > 0 else 0.0
+            precisions.append(precision)
+        
+        # Calculate geometric mean of precisions
+        if all(p > 0 for p in precisions):
+            geo_mean = math.exp(sum(math.log(p) for p in precisions) / len(precisions))
+        else:
+            geo_mean = 0.0
+        
+        bleu = bp * geo_mean
+        
+        details = {
+            'brevity_penalty': bp,
+            'precisions': precisions,
+            'geometric_mean': geo_mean,
+            'ref_length': len(ref_tokens),
+            'cand_length': len(cand_tokens)
+        }
+        
+        return (bleu, details)
+
+
 class DocumentationEvaluator:
     """
     Complete evaluation pipeline.
@@ -534,7 +623,8 @@ class DocumentationEvaluator:
         self,
         doc: str,
         observed_info: Optional[Dict] = None,
-        symbol_name: Optional[str] = None
+        symbol_name: Optional[str] = None,
+        reference_doc: Optional[str] = None
     ) -> EvaluationReport:
         """
         Run complete evaluation.
@@ -545,6 +635,8 @@ class DocumentationEvaluator:
         :type observed_info: Optional[Dict]
         :param symbol_name: Function/class name for tautology check
         :type symbol_name: Optional[str]
+        :param reference_doc: Gold standard documentation for BLEU comparison (optional)
+        :type reference_doc: Optional[str]
         :return: Complete evaluation report
         :rtype: EvaluationReport
         """
@@ -596,11 +688,18 @@ class DocumentationEvaluator:
             brevity_score, brevity_details = BrevityCalculator.calculate(doc, self.max_tokens)
             details['brevity'] = brevity_details
             
+            # Metric 6: BLEU (optional - only if reference provided)
+            bleu_score = None
+            if reference_doc:
+                bleu_score, bleu_details = BLEUCalculator.calculate(reference_doc, doc)
+                details['bleu'] = bleu_details
+            
             quality = QualityScores(
                 evidence_coverage=evidence_score,
                 consistency=consistency_score,
                 non_tautology=tautology_score,
-                brevity_efficiency=brevity_score
+                brevity_efficiency=brevity_score,
+                bleu_score=bleu_score
             )
         
         return EvaluationReport(compliance=compliance, quality=quality, details=details)

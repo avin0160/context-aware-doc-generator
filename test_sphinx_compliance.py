@@ -24,16 +24,30 @@ Advances the game state by one frame.
 """
 '''
     
+    # Gold standard reference for BLEU
+    reference = '''
+"""
+Updates the game state for one frame.
+
+:param delta_time: Time since last frame in seconds
+:type delta_time: float
+:param force_update: Forces update when true
+:type force_update: bool
+:return: None
+:rtype: None
+"""
+'''
+    
     observed_info = {
         'parameters': ['delta_time', 'force_update'],
         'has_return': True,  # Even if returns None
         'attributes': []
     }
     
-    report = evaluator.evaluate(good_doc, observed_info, 'update')
+    report = evaluator.evaluate(good_doc, observed_info, 'update', reference_doc=reference)
     
     print("="*60)
-    print("TEST 1: GOOD SPHINX DOCUMENTATION")
+    print("TEST 1: GOOD SPHINX DOCUMENTATION (WITH BLEU)")
     print("="*60)
     print(report)
     print(f"\n✅ RESULT: {'ACCEPTED' if report.accepted else 'REJECTED'}")
@@ -41,6 +55,8 @@ Advances the game state by one frame.
     assert report.accepted, "Good documentation should pass compliance"
     assert report.quality.evidence_coverage == 1.0, "Should have 100% coverage"
     assert report.quality.non_tautology >= 0.9, "Should be non-tautological"
+    assert report.quality.bleu_score is not None, "Should have BLEU score"
+    assert report.quality.bleu_score > 0.4, "Should have reasonable BLEU score (paraphrase)"
     
     return report
 
@@ -273,9 +289,99 @@ def test_batch_evaluation():
     return aggregate
 
 
+def test_bleu_optimization():
+    """Test BLEU-optimized documentation generation"""
+    evaluator = DocumentationEvaluator(max_tokens=512)
+    
+    # Gold standard (what we want to match)
+    gold_standard = '''
+"""
+Renders the current frame to the display surface.
+
+:param surface: Target rendering surface
+:type surface: pygame.Surface
+:param camera: Camera viewport for rendering
+:type camera: Camera
+:return: Number of objects rendered
+:rtype: int
+"""
+'''
+    
+    # Test different documentation styles
+    test_cases = [
+        ("EXACT MATCH", gold_standard),
+        ("GOOD PARAPHRASE", '''
+"""
+Draws the current frame to display surface.
+
+:param surface: Display surface for rendering
+:type surface: pygame.Surface
+:param camera: Viewport camera for rendering
+:type camera: Camera
+:return: Count of rendered objects
+:rtype: int
+"""
+'''),
+        ("POOR MATCH", '''
+"""
+Renders graphics to target.
+
+:param surface: A rendering surface
+:type surface: pygame.Surface
+:param camera: A viewing camera
+:type camera: Camera
+:return: Some value
+:rtype: int
+"""
+'''),
+    ]
+    
+    observed_info = {
+        'parameters': ['surface', 'camera'],
+        'has_return': True,
+        'attributes': []
+    }
+    
+    print("\n" + "="*60)
+    print("TEST 8: BLEU OPTIMIZATION ASSESSMENT")
+    print("="*60)
+    
+    results = []
+    for name, candidate in test_cases:
+        report = evaluator.evaluate(candidate, observed_info, 'render', reference_doc=gold_standard)
+        
+        if report.quality:
+            print(f"\n{name}:")
+            print(f"  BLEU: {report.quality.bleu_score:.2%}" if report.quality.bleu_score else "  BLEU: N/A")
+            print(f"  Evidence Coverage: {report.quality.evidence_coverage:.2%}")
+            print(f"  Non-Tautology: {report.quality.non_tautology:.2%}")
+            print(f"  Overall Quality: {report.quality.overall_quality:.2%}")
+            print(f"  Status: {'✅ PASS' if report.accepted else '❌ FAIL'}")
+            
+            if report.quality.bleu_score:
+                details = report.details.get('bleu', {})
+                print(f"  BLEU Details:")
+                print(f"    - Brevity Penalty: {details.get('brevity_penalty', 0):.3f}")
+                print(f"    - 1-gram: {details.get('precisions', [0])[0]:.3f}")
+                print(f"    - 2-gram: {details.get('precisions', [0,0])[1]:.3f}")
+                print(f"    - 3-gram: {details.get('precisions', [0,0,0])[2]:.3f}")
+                print(f"    - 4-gram: {details.get('precisions', [0,0,0,0])[3]:.3f}")
+            
+            results.append((name, report.quality.bleu_score if report.quality.bleu_score else 0))
+    
+    # Verify BLEU distinguishes quality
+    assert results[0][1] > 0.9, "Exact match should have BLEU > 0.9"
+    assert results[1][1] > 0.4, "Good paraphrase should have BLEU > 0.4"
+    assert results[0][1] > results[1][1] > results[2][1], "BLEU should decrease: exact > paraphrase > poor"
+    
+    print(f"\nBLEU correctly ranks: {results[0][0]} ({results[0][1]:.2%}) > {results[1][0]} ({results[1][1]:.2%}) > {results[2][0]} ({results[2][1]:.2%})")
+    
+    return results
+
+
 if __name__ == '__main__':
-    print("\n" + "🔬 SPHINX COMPLIANCE METRICS TEST SUITE" + "\n")
-    print("Gate-based validation with objective quality scoring\n")
+    print("\n" + "SPHINX COMPLIANCE + BLEU METRICS TEST SUITE" + "\n")
+    print("Gate-based validation with objective quality scoring + BLEU reference\n")
     
     try:
         test_good_sphinx_documentation()
@@ -285,11 +391,13 @@ if __name__ == '__main__':
         test_speculation_documentation()
         test_markdown_formatting()
         test_batch_evaluation()
+        test_bleu_optimization()
         
         print("\n" + "="*60)
         print("✅ ALL TESTS PASSED")
         print("="*60)
-        print("\nMetrics System Ready for Production Use\n")
+        print("\nMetrics System Ready for Production Use")
+        print("BLEU integration successful - reference-based optimization enabled\n")
         
     except AssertionError as e:
         print(f"\n❌ TEST FAILED: {e}\n")
