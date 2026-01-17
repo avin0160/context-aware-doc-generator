@@ -797,6 +797,34 @@ async def root():
                         `;
                         resultDiv.style.borderLeftColor = '#e74c3c';
                     } else {
+                        // Build metrics HTML if available
+                        let metricsHTML = '';
+                        if (result.metrics) {
+                            metricsHTML = `
+                                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 8px; margin: 15px 0; color: white;">
+                                    <h4 style="margin: 0 0 15px 0; font-size: 1.2em;">📊 Quality Metrics</h4>
+                                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
+                                        <div style="background: rgba(255,255,255,0.2); padding: 15px; border-radius: 6px; text-align: center;">
+                                            <div style="font-size: 2em; font-weight: bold;">${result.metrics.bleu}</div>
+                                            <div style="font-size: 0.9em; opacity: 0.9;">BLEU Score</div>
+                                        </div>
+                                        <div style="background: rgba(255,255,255,0.2); padding: 15px; border-radius: 6px; text-align: center;">
+                                            <div style="font-size: 2em; font-weight: bold;">${result.metrics.meteor}</div>
+                                            <div style="font-size: 0.9em; opacity: 0.9;">METEOR</div>
+                                        </div>
+                                        <div style="background: rgba(255,255,255,0.2); padding: 15px; border-radius: 6px; text-align: center;">
+                                            <div style="font-size: 2em; font-weight: bold;">${result.metrics.rouge_l}</div>
+                                            <div style="font-size: 0.9em; opacity: 0.9;">ROUGE-L</div>
+                                        </div>
+                                        <div style="background: rgba(255,255,255,0.2); padding: 15px; border-radius: 6px; text-align: center;">
+                                            <div style="font-size: 2em; font-weight: bold;">${result.metrics.overall}</div>
+                                            <div style="font-size: 0.9em; opacity: 0.9;">Overall Quality</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                        
                         resultDiv.innerHTML = `
                             <h3 style="color: #27ae60;">✅ ${result.status}</h3>
                             <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 10px 0;">
@@ -804,6 +832,7 @@ async def root():
                                 <div><strong>Style:</strong> ${result.style || 'N/A'}</div>
                                 <div><strong>Files:</strong> ${result.files_analyzed || 'N/A'}</div>
                             </div>
+                            ${metricsHTML}
                             <div style="background: white; padding: 20px; border-radius: 8px; margin: 15px 0; white-space: pre-wrap; font-family: monospace; max-height: 600px; overflow-y: auto; border: 1px solid #ddd;">${result.documentation}</div>
                             <button onclick="downloadDocs('${result.style || 'markdown'}')" style="background: #27ae60; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">📥 Download Documentation</button>
                         `;
