@@ -1,6 +1,6 @@
 """
 Inline Documentation Injector
-Modifies source files to add Google-style docstrings directly
+Modifies source files to add Sphinx/reST or Google-style docstrings directly
 """
 
 import re
@@ -13,8 +13,20 @@ class PythonDocInjector:
     """Inject docstrings into Python source code"""
     
     @staticmethod
-    def inject_docstrings(content: str, functions: List[Any], classes: List[Any]) -> str:
-        """Add docstrings to Python functions and classes"""
+    def inject_docstrings(content: str, functions: List[Any], classes: List[Any], style: str = 'sphinx') -> str:
+        """Add docstrings to Python functions and classes
+        
+        :param content: Source code content
+        :type content: str
+        :param functions: List of function metadata
+        :type functions: List[Any]
+        :param classes: List of class metadata
+        :type classes: List[Any]
+        :param style: Documentation style ('sphinx' or 'google')
+        :type style: str
+        :return: Modified source code with injected docstrings
+        :rtype: str
+        """
         lines = content.split('\n')
         modified_lines = []
         injected_at_lines = set()
@@ -25,13 +37,19 @@ class PythonDocInjector:
         # Process functions
         for func in functions:
             if func.line_start not in injected_at_lines and not func.docstring:
-                docstring = PythonDocInjector._generate_function_docstring(func)
+                if style == 'sphinx':
+                    docstring = PythonDocInjector._generate_sphinx_function_docstring(func)
+                else:
+                    docstring = PythonDocInjector._generate_function_docstring(func)
                 docstring_map[func.line_start] = docstring
         
         # Process classes
         for cls in classes:
             if cls.line_start not in injected_at_lines and not cls.docstring:
-                docstring = PythonDocInjector._generate_class_docstring(cls)
+                if style == 'sphinx':
+                    docstring = PythonDocInjector._generate_sphinx_class_docstring(cls)
+                else:
+                    docstring = PythonDocInjector._generate_class_docstring(cls)
                 docstring_map[cls.line_start] = docstring
         
         # Inject docstrings
@@ -45,6 +63,104 @@ class PythonDocInjector:
                     modified_lines.append(' ' * (indent + 4) + doc_line)
         
         return '\n'.join(modified_lines)
+    
+    @staticmethod
+    def _generate_sphinx_function_docstring(func) -> str:
+        """Generate Sphinx/reST style docstring for function
+        
+        :param func: Function metadata
+        :type func: Any
+        :return: Sphinx-formatted docstring
+        :rtype: str
+        """
+        # Infer purpose from function name
+        func_name = func.name
+        purpose = func_name.replace('_', ' ').capitalize()
+        
+        doc_lines = [
+            '"""',
+            f'{purpose}.',
+            ''
+        ]
+        
+        # Add parameters
+        if hasattr(func, 'args') and func.args:
+            for arg in func.args:
+                if arg == 'self':
+                    continue
+                # Infer type from name
+                arg_type = PythonDocInjector._infer_type(arg)
+                arg_desc = f"{arg.replace('_', ' ').capitalize()}"
+                doc_lines.append(f':param {arg}: {arg_desc}')
+                doc_lines.append(f':type {arg}: {arg_type}')
+        
+        # Add return
+        return_type = getattr(func, 'return_type', None)
+        has_return = getattr(func, 'has_return', False)
+        
+        if return_type and return_type != 'None':
+            doc_lines.append(f':return: Result of {purpose.lower()}')
+            doc_lines.append(f':rtype: {return_type}')
+        elif has_return or 'return' in func_name.lower():
+            doc_lines.append(':return: Computed result')
+            doc_lines.append(':rtype: Any')
+        
+        doc_lines.append('"""')
+        return '\n'.join(doc_lines)
+    
+    @staticmethod
+    def _generate_sphinx_class_docstring(cls) -> str:
+        """Generate Sphinx/reST style docstring for class
+        
+        :param cls: Class metadata
+        :type cls: Any
+        :return: Sphinx-formatted docstring
+        :rtype: str
+        """
+        class_name = cls.name
+        purpose = f"{class_name.replace('_', ' ')} class"
+        
+        doc_lines = [
+            '"""',
+            f'{purpose}.',
+            ''
+        ]
+        
+        # Add attributes if available
+        if hasattr(cls, 'attributes') and cls.attributes:
+            for attr in cls.attributes[:5]:  # Limit to 5
+                attr_type = PythonDocInjector._infer_type(attr)
+                attr_desc = attr.replace('_', ' ').capitalize()
+                doc_lines.append(f':ivar {attr}: {attr_desc}')
+                doc_lines.append(f':vartype {attr}: {attr_type}')
+        
+        doc_lines.append('"""')
+        return '\n'.join(doc_lines)
+    
+    @staticmethod
+    def _infer_type(name: str) -> str:
+        """Infer type from parameter/attribute name
+        
+        :param name: Variable name
+        :type name: str
+        :return: Inferred type
+        :rtype: str
+        """
+        name_lower = name.lower()
+        
+        # Common patterns
+        if name_lower in ['id', 'index', 'count', 'num', 'size', 'length']:
+            return 'int'
+        elif name_lower in ['name', 'text', 'message', 'path', 'url']:
+            return 'str'
+        elif name_lower in ['flag', 'enabled', 'active', 'is_valid']:
+            return 'bool'
+        elif name_lower.endswith('_list') or name_lower.endswith('s'):
+            return 'List'
+        elif name_lower.endswith('_dict') or name_lower == 'data':
+            return 'Dict'
+        else:
+            return 'Any'
     
     @staticmethod
     def _generate_function_docstring(func) -> str:
