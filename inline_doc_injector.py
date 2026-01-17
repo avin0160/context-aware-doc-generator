@@ -68,6 +68,9 @@ class PythonDocInjector:
     def _generate_sphinx_function_docstring(func) -> str:
         """Generate Sphinx/reST style docstring for function
         
+        Follows official Sphinx RTD format:
+        https://sphinx-rtd-tutorial.readthedocs.io/en/latest/docstrings.html
+        
         :param func: Function metadata
         :type func: Any
         :return: Sphinx-formatted docstring
@@ -83,23 +86,23 @@ class PythonDocInjector:
             ''
         ]
         
-        # Add parameters
+        # Add parameters (Sphinx/reST format with defaults)
         if hasattr(func, 'args') and func.args:
             for arg in func.args:
                 if arg == 'self':
                     continue
                 # Infer type from name
                 arg_type = PythonDocInjector._infer_type(arg)
-                arg_desc = f"{arg.replace('_', ' ').capitalize()}"
+                arg_desc = f"{arg.replace('_', ' ').capitalize()}, defaults to None"
                 doc_lines.append(f':param {arg}: {arg_desc}')
-                doc_lines.append(f':type {arg}: {arg_type}')
+                doc_lines.append(f':type {arg}: {arg_type}, optional')
         
-        # Add return
+        # Add return (Sphinx/reST format)
         return_type = getattr(func, 'return_type', None)
         has_return = getattr(func, 'has_return', False)
         
         if return_type and return_type != 'None':
-            doc_lines.append(f':return: Result of {purpose.lower()}')
+            doc_lines.append(f':return: {purpose} result')
             doc_lines.append(f':rtype: {return_type}')
         elif has_return or 'return' in func_name.lower():
             doc_lines.append(':return: Computed result')

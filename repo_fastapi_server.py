@@ -992,10 +992,21 @@ async def generate_docs(
     code_snippet: str = Form(""),
     input_type: str = Form("url"),
     context: str = Form(""), 
-    doc_style: str = Form("google")
+    doc_style: str = Form("sphinx")
 ):
     """Generate documentation for repository from Git URL, ZIP, or code snippet"""
     global doc_generator
+    
+    # DEBUG: Log received style
+    print(f"📝 Received doc_style: '{doc_style}'")
+    
+    # Validate and normalize style
+    valid_styles = ['sphinx', 'opensource', 'technical_comprehensive']
+    if doc_style not in valid_styles:
+        print(f"⚠️ Invalid style '{doc_style}', defaulting to 'sphinx'")
+        doc_style = 'sphinx'
+    
+    print(f"✅ Using documentation style: '{doc_style}'")
     
     try:
         # Handle different input types
@@ -1142,7 +1153,7 @@ async def generate_docs(
                 
                 response_data = {
                     "documentation": result,
-                    "status": "✅ Generated via full AI system with Phi-3 Mini",
+                    "status": f"✅ Generated via full AI system with Phi-3 Mini ({doc_style} style)",
                     "method": "context-aware AI with RAG + Phi-3",
                     "style": doc_style
                 }
