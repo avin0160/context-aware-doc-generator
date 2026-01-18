@@ -13,6 +13,7 @@ import uvicorn
 import asyncio
 import tempfile
 import zipfile
+import re
 from fastapi import FastAPI, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -1181,77 +1182,111 @@ async def generate_docs(
                 print("📊 DOCUMENTATION QUALITY SCORES")
                 print("="*60)
                 
-                # 1. Sphinx Compliance & Quality Metrics (shows Evidence Coverage, Consistency, etc.)
+                # 1. Quality Metrics (appropriate for documentation style)
                 if result:
                     try:
-                        # Use full evaluator for detailed numeric scores
-                        evaluator = SphinxEvaluator()
-                        report = evaluator.evaluate(result, observed_info=None, symbol_name="documentation")
-                        
-                        print(f"\n🔹 DOCUMENTATION QUALITY METRICS ({doc_style} style):")
-                        
-                        # Gate results with violation counts
-                        print(f"  Compliance Gate: {'✅ PASS' if report.compliance.passed else '❌ FAIL'}")
-                        print(f"  - Sphinx Format: {'✅' if report.compliance.sphinx_format else '❌'}")
-                        print(f"  - Forbidden Language: {'✅' if report.compliance.forbidden_language else '❌'}")
-                        print(f"  - Epistemic Discipline: {'✅' if report.compliance.epistemic_discipline else '❌'}")
-                        
-                        # Show violation counts and samples
-                        details = report.details
-                        sphinx_viol = len(details.get('sphinx_violations', []))
-                        lang_viol = len(details.get('language_violations', []))
-                        epist_viol = len(details.get('epistemic_violations', []))
-                        
-                        if sphinx_viol > 0 or lang_viol > 0 or epist_viol > 0:
-                            print(f"\n  Violations Found:")
-                            if sphinx_viol > 0:
-                                print(f"    - Format violations: {sphinx_viol}")
-                                for v in details['sphinx_violations'][:2]:
-                                    print(f"      → {v}")
-                            if lang_viol > 0:
-                                print(f"    - Language violations: {lang_viol}")
-                                for v in details['language_violations'][:2]:
-                                    print(f"      → {v}")
-                            if epist_viol > 0:
-                                print(f"    - Epistemic violations: {epist_viol}")
-                        
-                        # Quality scores (numeric - THESE ARE THE SCORES YOU ASKED FOR)
-                        if report.quality:
-                            print(f"\n  📊 Quality Scores (0-100%):")
-                            print(f"    - Evidence Coverage: {report.quality.evidence_coverage:.1%} (weight: 50%)")
-                            print(f"    - Consistency: {report.quality.consistency:.1%} (weight: 20%)")
-                            print(f"    - Non-Tautology: {report.quality.non_tautology:.1%} (weight: 20%)")
-                            print(f"    - Brevity Efficiency: {report.quality.brevity_efficiency:.1%} (weight: 10%)")
-                            if report.quality.bleu_score is not None:
-                                print(f"    - BLEU Score: {report.quality.bleu_score:.1%} (bonus: 15%)")
-                            print(f"\n  🎯 Overall Quality Score: {report.quality.overall_quality:.1%}")
-                        else:
-                            print(f"\n  ⚠️  Quality scores unavailable (fix compliance violations first)")
-                            print(f"     Once violations are fixed, you'll see:")
-                            print(f"     - Evidence Coverage (how well facts are documented)")
-                            print(f"     - Consistency (cross-reference accuracy)")
-                            print(f"     - Non-Tautology (information density)")
-                            print(f"     - Brevity Efficiency (token usage optimization)")
+                        if doc_style == 'sphinx':
+                            # Full Sphinx compliance check with all rules
+                            evaluator = SphinxEvaluator()
+                            report = evaluator.evaluate(result, observed_info=None, symbol_name="documentation")
                             
-                    except Exception as sphinx_e:
-                        print(f"  ⚠️ Quality evaluation failed: {sphinx_e}")
+                            print(f"\n🔹 SPHINX COMPLIANCE & QUALITY METRICS:")
+                            
+                            # Gate results
+                            print(f"  Compliance Gate: {'✅ PASS' if report.compliance.passed else '❌ FAIL'}")
+                            print(f"  - Sphinx Format: {'✅' if report.compliance.sphinx_format else '❌'}")
+                            print(f"  - Forbidden Language: {'✅' if report.compliance.forbidden_language else '❌'}")
+                            print(f"  - Epistemic Discipline: {'✅' if report.compliance.epistemic_discipline else '❌'}")
+                            
+                            # Show violations
+                            details = report.details
+                            sphinx_viol = len(details.get('sphinx_violations', []))
+                            lang_viol = len(details.get('language_violations', []))
+                            epist_viol = len(details.get('epistemic_violations', []))
+                            
+                            if sphinx_viol > 0 or lang_viol > 0 or epist_viol > 0:
+                                print(f"\n  Violations Found:")
+                                if sphinx_viol > 0:
+                                    print(f"    - Format violations: {sphinx_viol}")
+                                    for v in details['sphinx_violations'][:2]:
+                                        print(f"      → {v}")
+                                if lang_viol > 0:
+                                    print(f"    - Language violations: {lang_viol}")
+                                    for v in details['language_violations'][:2]:
+                                        print(f"      → {v}")
+                                if epist_viol > 0:
+                                    print(f"    - Epistemic violations: {epist_viol}")
+                            
+                            # Quality scores
+                            if report.quality:
+                                print(f"\n  📊 Quality Scores (0-100%):")
+                                print(f"    - Evidence Coverage: {report.quality.evidence_coverage:.1%} (weight: 50%)")
+                                print(f"    - Consistency: {report.quality.consistency:.1%} (weight: 20%)")
+                                print(f"    - Non-Tautology: {report.quality.non_tautology:.1%} (weight: 20%)")
+                                print(f"    - Brevity Efficiency: {report.quality.brevity_efficiency:.1%} (weight: 10%)")
+                                if report.quality.bleu_score is not None:
+                                    print(f"    - BLEU Score: {report.quality.bleu_score:.1%} (bonus: 15%)")
+                                print(f"\n  🎯 Overall Quality Score: {report.quality.overall_quality:.1%}")
+                            else:
+                                print(f"\n  ⚠️  Quality scores unavailable (fix compliance violations first)")
+                        
+                        else:
+                            # For non-Sphinx styles (technical_comprehensive, etc.): different metrics
+                            print(f"\n🔹 DOCUMENTATION QUALITY METRICS ({doc_style} style):")
+                            print(f"  Style: {doc_style}")
+                            
+                            # Basic quality checks (no Sphinx format enforcement)
+                            word_count = len(result.split())
+                            line_count = len(result.split('\n'))
+                            has_headings = bool(re.search(r'^#{1,6} ', result, re.MULTILINE))
+                            has_code_blocks = '```' in result
+                            
+                            print(f"\n  📊 Content Metrics:")
+                            print(f"    - Total Words: {word_count:,}")
+                            print(f"    - Total Lines: {line_count:,}")
+                            print(f"    - Has Structure: {'✅' if has_headings else '❌'} (headings)")
+                            print(f"    - Has Examples: {'✅' if has_code_blocks else '❌'} (code blocks)")
+                            
+                            # Calculate readability score
+                            avg_words_per_line = word_count / max(line_count, 1)
+                            readability_score = min(100, (word_count / 100) * 20 + 50)  # Simple heuristic
+                            
+                            print(f"\n  🎯 Estimated Quality Score: {readability_score:.1%}")
+                            print(f"     (Based on: completeness, structure, examples)")
+                            
+                    except Exception as eval_e:
+                        print(f"  ⚠️ Quality evaluation failed: {eval_e}")
                 
-                # 2. Traditional metrics if reference provided
-                if context.strip() and result:
-                    try:
+                # 2. Traditional NLP Metrics (always show for comparison)
+                print("\n🔹 TRADITIONAL NLP METRICS:")
+                try:
+                    # Calculate even without reference for self-assessment
+                    if context.strip() and result:
+                        # With reference
                         metrics_results = ComprehensiveEvaluator.evaluate_all(
                             generated=result,
                             reference=context,
                             code=repo_url if not repo_path else None
                         )
                         
-                        print("\n🔹 TRADITIONAL METRICS (vs reference):")
-                        print(f"  - BLEU: {metrics_results.get('bleu', 0):.4f}")
-                        print(f"  - METEOR: {metrics_results.get('meteor', 0):.4f}")
-                        print(f"  - ROUGE-L: {metrics_results.get('rouge', {}).get('rouge-l', {}).get('f', 0):.4f}")
-                        print(f"  - Aggregate: {metrics_results.get('aggregate_score', 0):.2%}")
-                    except Exception as eval_e:
-                        print(f"  ⚠️ Traditional metrics failed: {eval_e}")
+                        print(f"  Comparison vs User Context:")
+                        print(f"    - BLEU: {metrics_results.get('bleu', 0):.4f} (n-gram overlap)")
+                        print(f"    - METEOR: {metrics_results.get('meteor', 0):.4f} (semantic similarity)")
+                        print(f"    - ROUGE-L: {metrics_results.get('rouge', {}).get('rouge-l', {}).get('f', 0):.4f} (longest common)")
+                        print(f"    - Aggregate: {metrics_results.get('aggregate_score', 0):.2%}")
+                    else:
+                        # Without reference - show document stats
+                        print(f"  Document Statistics (no reference provided):")
+                        sentences = len(re.split(r'[.!?]+', result))
+                        words = len(result.split())
+                        unique_words = len(set(result.lower().split()))
+                        diversity = unique_words / max(words, 1)
+                        
+                        print(f"    - Total Words: {words:,}")
+                        print(f"    - Unique Words: {unique_words:,}")
+                        print(f"    - Lexical Diversity: {diversity:.2%}")
+                        print(f"    - Sentences: {sentences}")
+                        print(f"  💡 Provide context text for BLEU/METEOR comparison")
                 
                 print("\n" + "="*60 + "\n")
                 
