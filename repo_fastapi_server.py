@@ -1077,12 +1077,23 @@ async def generate_docs(
                     repo_path = temp_dir
                     print(f"✅ Repository cloned to: {repo_path}")
                     
-                    # Remove .git directory - we don't need version control files for documentation
+                    # Remove .git directory (optional - not critical if it fails)
                     git_dir = os.path.join(temp_dir, '.git')
                     if os.path.exists(git_dir):
                         import shutil
-                        shutil.rmtree(git_dir)
-                        print("🗑️  Removed .git directory (version control files not needed)")
+                        import stat
+                        
+                        def handle_remove_readonly(func, path, exc):
+                            """Error handler for Windows readonly files"""
+                            os.chmod(path, stat.S_IWRITE)
+                            func(path)
+                        
+                        try:
+                            shutil.rmtree(git_dir, onerror=handle_remove_readonly)
+                            print("🗑️  Removed .git directory (version control files not needed)")
+                        except Exception as rm_err:
+                            # Non-critical - just log and continue
+                            print(f"⚠️  Could not remove .git directory (not critical): {rm_err}")
                     
                 except subprocess.CalledProcessError as e:
                     return JSONResponse({

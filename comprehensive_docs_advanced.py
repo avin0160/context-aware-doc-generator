@@ -1100,11 +1100,22 @@ class MultiInputHandler:
             subprocess.run(['git', 'clone', '--depth=1', repo_url, temp_dir], 
                          check=True, capture_output=True, timeout=600)
             
-            # Remove .git directory - we don't need version control files
+            # Remove .git directory (optional - not critical if it fails)
             git_dir = os.path.join(temp_dir, '.git')
             if os.path.exists(git_dir):
                 import shutil
-                shutil.rmtree(git_dir)
+                import stat
+                
+                def handle_remove_readonly(func, path, exc):
+                    """Error handler for Windows readonly files"""
+                    os.chmod(path, stat.S_IWRITE)
+                    func(path)
+                
+                try:
+                    shutil.rmtree(git_dir, onerror=handle_remove_readonly)
+                except Exception:
+                    # Non-critical - silently continue
+                    pass
             
             # Extract Python files
             file_contents = {}
