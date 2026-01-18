@@ -30,6 +30,8 @@ try:
     # Import ONLY the FIXED advanced documentation system
     from comprehensive_docs_advanced import DocumentationGenerator
     from evaluation_metrics import BLEUScore, ROUGEScore, METEORScore, CodeBLEU, ComprehensiveEvaluator
+    from sphinx_compliance_metrics import DocumentationEvaluator as SphinxEvaluator
+    from technical_doc_metrics import TechnicalDocumentationEvaluator
     from src.rag import CodeRAGSystem
     ADVANCED_SYSTEM_AVAILABLE = True
     print("✅ FIXED Advanced documentation system imported successfully")
@@ -1160,8 +1162,64 @@ async def generate_docs(
                     # Treat as code snippet
                     result = await asyncio.to_thread(doc_generator.generate_documentation, repo_url, enhanced_context, doc_style, input_type="code")
                 
-                # Calculate comprehensive evaluation metrics if we have reference
+                # Calculate comprehensive evaluation metrics
                 metrics_results = None
+                
+                # ALWAYS evaluate Sphinx compliance and technical quality
+                print("\n" + "="*60)
+                print("📊 DOCUMENTATION QUALITY SCORES")
+                print("="*60)
+                
+                # 1. Sphinx Compliance (if sphinx style)
+                if doc_style == 'sphinx' and result:
+                    try:
+                        sphinx_result = SphinxEvaluator.evaluate_sphinx_compliance(result)
+                        print("\n🔹 SPHINX COMPLIANCE VALIDATION:")
+                        print(f"  Compliance Gate: {'\u2705 PASS' if sphinx_result['compliance_gate'] else '\u274c FAIL'}")
+                        print(f"  - Sphinx Format: {'\u2705' if sphinx_result['sphinx_format_clean'] else '\u274c'}")
+                        print(f"  - Forbidden Language: {'\u2705' if sphinx_result['forbidden_language_clean'] else '\u274c'}")
+                        print(f"  - Epistemic Discipline: {'\u2705' if sphinx_result['epistemic_discipline_clean'] else '\u274c'}")
+                        
+                        if sphinx_result['sphinx_violations']:
+                            print(f"\n  Sphinx Violations ({len(sphinx_result['sphinx_violations'])}):")
+                            for v in sphinx_result['sphinx_violations'][:3]:
+                                print(f"    - {v}")
+                        if sphinx_result['language_violations']:
+                            print(f"\n  Language Violations ({len(sphinx_result['language_violations'])}):")
+                            for v in sphinx_result['language_violations'][:3]:
+                                print(f"    - {v}")
+                    except Exception as sphinx_e:
+                        print(f"  ⚠️ Sphinx evaluation failed: {sphinx_e}")
+                
+                # 2. Technical Documentation Quality (always)
+                if result:
+                    try:
+                        # Extract function name and params from result (basic parsing)
+                        func_name = "documentation"
+                        params = []
+                        
+                        tech_result = TechnicalDocumentationEvaluator.evaluate_comprehensive(
+                            doc=result,
+                            function_name=func_name,
+                            actual_params=params
+                        )
+                        
+                        print("\n🔹 TECHNICAL DOCUMENTATION QUALITY:")
+                        overall_score = tech_result.get('overall_score', 0)
+                        quality_level = tech_result.get('quality_level', 'Unknown')
+                        
+                        print(f"  Overall Score: {overall_score:.1%} ({quality_level})")
+                        print(f"  Category Scores:")
+                        print(f"    - Structure: {tech_result.get('structure_score', 0):.1%}")
+                        print(f"    - Parameter Docs: {tech_result.get('parameter_score', 0):.1%}")
+                        print(f"    - Type Accuracy: {tech_result.get('type_score', 0):.1%}")
+                        print(f"    - Description Quality: {tech_result.get('description_score', 0):.1%}")
+                        print(f"    - Technical Accuracy: {tech_result.get('technical_score', 0):.1%}")
+                        print(f"    - Sphinx Compliance: {tech_result.get('sphinx_score', 0):.1%}")
+                    except Exception as tech_e:
+                        print(f"  ⚠️ Technical evaluation failed: {tech_e}")
+                
+                # 3. Traditional metrics if reference provided
                 if context.strip() and result:
                     try:
                         metrics_results = ComprehensiveEvaluator.evaluate_all(
@@ -1170,11 +1228,15 @@ async def generate_docs(
                             code=repo_url if not repo_path else None
                         )
                         
-                        # Print comprehensive report
-                        report = ComprehensiveEvaluator.format_report(metrics_results)
-                        print(f"\n{report}\n")
+                        print("\n🔹 TRADITIONAL METRICS (vs reference):")
+                        print(f"  - BLEU: {metrics_results.get('bleu', 0):.4f}")
+                        print(f"  - METEOR: {metrics_results.get('meteor', 0):.4f}")
+                        print(f"  - ROUGE-L: {metrics_results.get('rouge', {}).get('rouge-l', {}).get('f', 0):.4f}")
+                        print(f"  - Aggregate: {metrics_results.get('aggregate_score', 0):.2%}")
                     except Exception as eval_e:
-                        print(f"⚠️ Evaluation failed: {eval_e}")
+                        print(f"  ⚠️ Traditional metrics failed: {eval_e}")
+                
+                print("\n" + "="*60 + "\n")
                 
                 response_data = {
                     "documentation": result,
