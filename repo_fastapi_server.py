@@ -1170,24 +1170,53 @@ async def generate_docs(
                 print("📊 DOCUMENTATION QUALITY SCORES")
                 print("="*60)
                 
-                # 1. Sphinx Compliance (if sphinx style)
-                if doc_style == 'sphinx' and result:
+                # 1. Sphinx Compliance & Quality Metrics (DETAILED - for ALL styles)
+                if result:
                     try:
-                        sphinx_result = SphinxEvaluator.evaluate_sphinx_compliance(result)
-                        print("\n🔹 SPHINX COMPLIANCE VALIDATION:")
-                        print(f"  Compliance Gate: {'\u2705 PASS' if sphinx_result['compliance_gate'] else '\u274c FAIL'}")
-                        print(f"  - Sphinx Format: {'\u2705' if sphinx_result['sphinx_format_clean'] else '\u274c'}")
-                        print(f"  - Forbidden Language: {'\u2705' if sphinx_result['forbidden_language_clean'] else '\u274c'}")
-                        print(f"  - Epistemic Discipline: {'\u2705' if sphinx_result['epistemic_discipline_clean'] else '\u274c'}")
+                        # Use full evaluator for detailed numeric scores
+                        evaluator = SphinxEvaluator()
+                        report = evaluator.evaluate(result, observed_info=None, symbol_name="documentation")
                         
-                        if sphinx_result['sphinx_violations']:
-                            print(f"\n  Sphinx Violations ({len(sphinx_result['sphinx_violations'])}):")
-                            for v in sphinx_result['sphinx_violations'][:3]:
-                                print(f"    - {v}")
-                        if sphinx_result['language_violations']:
-                            print(f"\n  Language Violations ({len(sphinx_result['language_violations'])}):")
-                            for v in sphinx_result['language_violations'][:3]:
-                                print(f"    - {v}")
+                        print("\n🔹 SPHINX COMPLIANCE & QUALITY METRICS:")
+                        
+                        # Gate results with violation counts
+                        print(f"  Compliance Gate: {'✅ PASS' if report.compliance.passed else '❌ FAIL'}")
+                        print(f"  - Sphinx Format: {'✅' if report.compliance.sphinx_format else '❌'}")
+                        print(f"  - Forbidden Language: {'✅' if report.compliance.forbidden_language else '❌'}")
+                        print(f"  - Epistemic Discipline: {'✅' if report.compliance.epistemic_discipline else '❌'}")
+                        
+                        # Show violation counts and samples
+                        details = report.details
+                        sphinx_viol = len(details.get('sphinx_violations', []))
+                        lang_viol = len(details.get('language_violations', []))
+                        epist_viol = len(details.get('epistemic_violations', []))
+                        
+                        if sphinx_viol > 0 or lang_viol > 0 or epist_viol > 0:
+                            print(f"\n  Violations Found:")
+                            if sphinx_viol > 0:
+                                print(f"    - Format violations: {sphinx_viol}")
+                                for v in details['sphinx_violations'][:2]:
+                                    print(f"      → {v}")
+                            if lang_viol > 0:
+                                print(f"    - Language violations: {lang_viol}")
+                                for v in details['language_violations'][:2]:
+                                    print(f"      → {v}")
+                            if epist_viol > 0:
+                                print(f"    - Epistemic violations: {epist_viol}")
+                        
+                        # Quality scores (numeric - if compliance passed)
+                        if report.quality:
+                            print(f"\n  📊 Quality Scores (0-100%):")
+                            print(f"    - Evidence Coverage: {report.quality.evidence_coverage:.1%} (weight: 50%)")
+                            print(f"    - Consistency: {report.quality.consistency:.1%} (weight: 20%)")
+                            print(f"    - Non-Tautology: {report.quality.non_tautology:.1%} (weight: 20%)")
+                            print(f"    - Brevity Efficiency: {report.quality.brevity_efficiency:.1%} (weight: 10%)")
+                            if report.quality.bleu_score is not None:
+                                print(f"    - BLEU Score: {report.quality.bleu_score:.1%} (bonus: 15%)")
+                            print(f"\n  🎯 Overall Sphinx Quality: {report.quality.overall_quality:.1%}")
+                        else:
+                            print(f"\n  ⚠️  Quality scores unavailable (fix compliance violations first)")
+                            
                     except Exception as sphinx_e:
                         print(f"  ⚠️ Sphinx evaluation failed: {sphinx_e}")
                 
