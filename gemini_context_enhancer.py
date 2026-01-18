@@ -51,29 +51,27 @@ class GeminiContextEnhancer:
             return
         
         try:
-            # Configure Gemini - handle both old and new API
-            if hasattr(genai, 'configure'):
-                genai.configure(api_key=GEMINI_API_KEY)
-                model_class = genai.GenerativeModel
-            else:
-                # Fallback for different API structure
-                genai.api_key = GEMINI_API_KEY
-                model_class = genai.GenerativeModel
+            # New google.genai API structure
+            # Configure client with API key
+            from google.genai import Client
+            self.client = Client(api_key=GEMINI_API_KEY)
             
-            # Initialize model with safety settings for code analysis
-            self.model = model_class(
-                model_name=GEMINI_MODEL,
-                generation_config={
-                    "temperature": GEMINI_TEMPERATURE,
-                    "max_output_tokens": GEMINI_MAX_TOKENS,
-                }
-            )
+            # The new API uses client.models.generate_content() instead of GenerativeModel
+            self.model = self.client
+            self.model_name = GEMINI_MODEL
+            self.temperature = GEMINI_TEMPERATURE
+            self.max_tokens = GEMINI_MAX_TOKENS
             
             self.available = True
             print(f"✅ Gemini Context Enhancer initialized: {GEMINI_MODEL}")
             
+        except ImportError as ie:
+            print(f"⚠️  Gemini package structure changed: {ie}")
+            print("   Install: pip install google-genai")
+            print("   Falling back to Phi-3 only mode")
         except Exception as e:
             print(f"⚠️  Gemini initialization failed: {e}")
+            print("   Check API key and network connection")
             print("   Falling back to Phi-3 only mode")
     
     def build_project_context(self, analysis: Dict) -> str:
@@ -201,10 +199,17 @@ class GeminiContextEnhancer:
                 project_context
             )
             
-            # Get Gemini's enhancement
-            response = self.model.generate_content(prompt)
+            # Get Gemini's enhancement using new API
+            response = self.model.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config={
+                    'temperature': self.temperature,
+                    'max_output_tokens': self.max_tokens
+                }
+            )
             
-            if response.text:
+            if response and hasattr(response, 'text') and response.text:
                 enhanced = response.text.strip()
                 
                 # VALIDATE: Reject non-Sphinx output
@@ -333,9 +338,13 @@ CRITICAL RULES:
 
 Output a corrected and enhanced project classification:"""
             
-            response = self.model.generate_content(prompt)
+            response = self.model.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config={'temperature': 0.2, 'max_output_tokens': 512}
+            )
             
-            if response.text:
+            if response and hasattr(response, 'text') and response.text:
                 return response.text.strip()
             else:
                 return project_purpose
@@ -380,9 +389,13 @@ CRITICAL RULES:
 
 Generate the architecture analysis:"""
             
-            response = self.model.generate_content(prompt)
+            response = self.model.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config={'temperature': 0.3, 'max_output_tokens': 1024}
+            )
             
-            if response.text:
+            if response and hasattr(response, 'text') and response.text:
                 return response.text.strip()
             else:
                 return "Analysis unavailable."
