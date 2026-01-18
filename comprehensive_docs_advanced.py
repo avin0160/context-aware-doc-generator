@@ -1369,10 +1369,8 @@ class DocumentationGenerator:
         repo_name = self._infer_project_name(repo_name, analysis, context)
         project_type = analysis['project_type'].replace('_', ' ').title()
         
-        # Pure Sphinx/reST format - wrap everything in proper directive structure
-        doc = f""".. _{repo_name.replace(' ', '_').lower()}_api:
-
-{repo_name} API Documentation
+        # Pure Sphinx/reST format - no reference anchors at file level
+        doc = f"""{repo_name} API Documentation
 {"="*len(f"{repo_name} API Documentation")}
 
 .. module:: {repo_name.lower().replace(' ', '_')}
@@ -3509,9 +3507,14 @@ When contributing to this project:
                 doc += f"\n**`{file_path}`:**\n\n"
                 for item_type, name, obj in public_items[:15]:
                     if item_type == 'class':
-                        doc += f"- `class {name}` - {obj.docstring[:80] if obj.docstring else 'No description'}{'...' if obj.docstring and len(obj.docstring) > 80 else ''}\n"
+                        desc = obj.docstring.strip() if obj.docstring else 'No description'
+                        # Don't truncate - use full first line
+                        first_line = desc.split('\n')[0] if desc else 'No description'
+                        doc += f"- `class {name}` - {first_line}\n"
                     else:
-                        doc += f"- `{name}()` - {obj.docstring[:80] if obj.docstring else 'No description'}{'...' if obj.docstring and len(obj.docstring) > 80 else ''}\n"
+                        desc = obj.docstring.strip() if obj.docstring else 'No description'
+                        first_line = desc.split('\n')[0] if desc else 'No description'
+                        doc += f"- `{name}()` - {first_line}\n"
                 doc += "\n"
         
         doc += """

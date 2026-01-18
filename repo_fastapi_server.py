@@ -1176,19 +1176,19 @@ async def generate_docs(
                 # Calculate comprehensive evaluation metrics
                 metrics_results = None
                 
-                # ALWAYS evaluate Sphinx compliance and technical quality
+                # ALWAYS evaluate documentation quality
                 print("\n" + "="*60)
                 print("📊 DOCUMENTATION QUALITY SCORES")
                 print("="*60)
                 
-                # 1. Sphinx Compliance & Quality Metrics (DETAILED - for ALL styles)
+                # 1. Sphinx Compliance & Quality Metrics (shows Evidence Coverage, Consistency, etc.)
                 if result:
                     try:
                         # Use full evaluator for detailed numeric scores
                         evaluator = SphinxEvaluator()
                         report = evaluator.evaluate(result, observed_info=None, symbol_name="documentation")
                         
-                        print("\n🔹 SPHINX COMPLIANCE & QUALITY METRICS:")
+                        print(f"\n🔹 DOCUMENTATION QUALITY METRICS ({doc_style} style):")
                         
                         # Gate results with violation counts
                         print(f"  Compliance Gate: {'✅ PASS' if report.compliance.passed else '❌ FAIL'}")
@@ -1215,7 +1215,7 @@ async def generate_docs(
                             if epist_viol > 0:
                                 print(f"    - Epistemic violations: {epist_viol}")
                         
-                        # Quality scores (numeric - if compliance passed)
+                        # Quality scores (numeric - THESE ARE THE SCORES YOU ASKED FOR)
                         if report.quality:
                             print(f"\n  📊 Quality Scores (0-100%):")
                             print(f"    - Evidence Coverage: {report.quality.evidence_coverage:.1%} (weight: 50%)")
@@ -1224,42 +1224,19 @@ async def generate_docs(
                             print(f"    - Brevity Efficiency: {report.quality.brevity_efficiency:.1%} (weight: 10%)")
                             if report.quality.bleu_score is not None:
                                 print(f"    - BLEU Score: {report.quality.bleu_score:.1%} (bonus: 15%)")
-                            print(f"\n  🎯 Overall Sphinx Quality: {report.quality.overall_quality:.1%}")
+                            print(f"\n  🎯 Overall Quality Score: {report.quality.overall_quality:.1%}")
                         else:
                             print(f"\n  ⚠️  Quality scores unavailable (fix compliance violations first)")
+                            print(f"     Once violations are fixed, you'll see:")
+                            print(f"     - Evidence Coverage (how well facts are documented)")
+                            print(f"     - Consistency (cross-reference accuracy)")
+                            print(f"     - Non-Tautology (information density)")
+                            print(f"     - Brevity Efficiency (token usage optimization)")
                             
                     except Exception as sphinx_e:
-                        print(f"  ⚠️ Sphinx evaluation failed: {sphinx_e}")
+                        print(f"  ⚠️ Quality evaluation failed: {sphinx_e}")
                 
-                # 2. Technical Documentation Quality (always)
-                if result:
-                    try:
-                        # Extract function name and params from result (basic parsing)
-                        func_name = "documentation"
-                        params = []
-                        
-                        tech_result = TechnicalDocumentationEvaluator.evaluate_comprehensive(
-                            doc=result,
-                            function_name=func_name,
-                            actual_params=params
-                        )
-                        
-                        print("\n🔹 TECHNICAL DOCUMENTATION QUALITY:")
-                        overall_score = tech_result.get('overall_score', 0)
-                        quality_level = tech_result.get('quality_level', 'Unknown')
-                        
-                        print(f"  Overall Score: {overall_score:.1%} ({quality_level})")
-                        print(f"  Category Scores:")
-                        print(f"    - Structure: {tech_result.get('structure_score', 0):.1%}")
-                        print(f"    - Parameter Docs: {tech_result.get('parameter_score', 0):.1%}")
-                        print(f"    - Type Accuracy: {tech_result.get('type_score', 0):.1%}")
-                        print(f"    - Description Quality: {tech_result.get('description_score', 0):.1%}")
-                        print(f"    - Technical Accuracy: {tech_result.get('technical_score', 0):.1%}")
-                        print(f"    - Sphinx Compliance: {tech_result.get('sphinx_score', 0):.1%}")
-                    except Exception as tech_e:
-                        print(f"  ⚠️ Technical evaluation failed: {tech_e}")
-                
-                # 3. Traditional metrics if reference provided
+                # 2. Traditional metrics if reference provided
                 if context.strip() and result:
                     try:
                         metrics_results = ComprehensiveEvaluator.evaluate_all(
