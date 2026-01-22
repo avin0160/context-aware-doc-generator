@@ -27,13 +27,16 @@ class Phi3DocumentationGenerator:
     Architecture:
     - Phi-3: Backbone - generates initial documentation from local context
     - Gemini: Context validator - enhances with full project awareness
+    - Fast-fail: If Phi-3 fails, switches to Gemini-only mode for speed
+    - Gemini-only: On CPU, skip Phi-3 entirely for better performance
     """
     
-    def __init__(self, model_name: str = "microsoft/Phi-3-mini-4k-instruct"):
+    def __init__(self, model_name: str = "microsoft/Phi-3-mini-4k-instruct", gemini_only: bool = False):
         """Initialize Phi-3 model and Gemini enhancer
         
         Args:
             model_name: HuggingFace model identifier
+            gemini_only: If True, skip Phi-3 and use only Gemini API (faster on CPU)
         """
         self.model = None
         self.tokenizer = None
@@ -41,9 +44,20 @@ class Phi3DocumentationGenerator:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.gemini_enhancer = None
         self.project_context = None  # Store full project context for Gemini
+        self.phi3_failed = False  # Fast-fail flag: skip Phi-3 after first failure
+        self.phi3_failure_count = 0  # Track failures
+        self.gemini_only = gemini_only  # Skip Phi-3 entirely if True
         
-        # Initialize Phi-3
-        self._initialize_model()
+        # Auto-enable gemini_only on CPU (Phi-3 is too slow)
+        if self.device == "cpu" and not gemini_only:
+            logger.info("⚡ CPU detected: Enabling Gemini-only mode for faster documentation")
+            self.gemini_only = True
+        
+        # Only load Phi-3 if not in gemini_only mode
+        if not self.gemini_only:
+            self._initialize_model()
+        else:
+            logger.info("🚀 Gemini-only mode: Skipping Phi-3 model loading for speed")
         
         # Initialize Gemini enhancer
         if GEMINI_AVAILABLE:
@@ -149,6 +163,16 @@ class Phi3DocumentationGenerator:
         if not self.model:
             return self._fallback_docstring(function_name, context)
         
+        # Gemini-only mode: Skip Phi-3 entirely (faster on CPU)
+        if self.gemini_only and self.gemini_enhancer and self.gemini_enhancer.available:
+            logger.info(f"⚡ Gemini-only mode: Generating docs for {function_name}")
+            return self._generate_with_gemini(function_code, function_name, context, style)
+        
+        # Fast-fail: Skip Phi-3 if it failed before (use Gemini directly)
+        if self.phi3_failed and self.gemini_enhancer and self.gemini_enhancer.available:
+            logger.info(f"⚡ Fast mode: Using Gemini directly for {function_name}")
+            return self._generate_with_gemini(function_code, function_name, context, style)
+        
         # Step 1: Generate with Phi-3 (backbone)
         prompt = self._build_function_prompt(function_code, function_name, context, style)
         
@@ -159,6 +183,9 @@ class Phi3DocumentationGenerator:
             with torch.no_grad():
                 # Use feature-detected generation parameters
                 generate_kwargs = self._get_generation_kwargs()
+                
+                # Add use_cache=False to avoid DynamicCache issues with newer transformers
+                generate_kwargs['use_cache'] = False
                 
                 outputs = self.model.generate(
                     **inputs,
@@ -184,6 +211,17 @@ class Phi3DocumentationGenerator:
             
         except Exception as e:
             logger.error(f"Error generating docstring: {e}")
+            self.phi3_failure_count += 1
+            
+            # After 2 failures, switch to Gemini-only mode for speed
+            if self.phi3_failure_count >= 2:
+                self.phi3_failed = True
+                logger.warning("⚡ Switching to Gemini-only mode for faster generation")
+            
+            # Try Gemini as fallback
+            if self.gemini_enhancer and self.gemini_enhancer.available:
+                return self._generate_with_gemini(function_code, function_name, context, style)
+            
             return self._fallback_docstring(function_name, context)
     
     def _build_function_prompt(
@@ -265,6 +303,66 @@ Generate ONLY the docstring text (no function signature):
             result = '\n'.join(docstring_lines).strip()
         
         return result
+    
+    def _generate_with_gemini(
+        self,
+        function_code: str,
+        function_name: str,
+        context: Dict[str, Any],
+        style: str = "google"
+    ) -> str:
+        """Generate documentation using Gemini directly (fast path)
+        
+        Used when Phi-3 fails to avoid repeated slow failures.
+        """
+        if not self.gemini_enhancer or not self.gemini_enhancer.available:
+            return self._fallback_docstring(function_name, context)
+        
+        try:
+            called_by = context.get('called_by', [])
+            calls = context.get('calls', [])
+            
+            prompt = f"""Generate a comprehensive {style} style docstring for this Python function.
+
+Function name: {function_name}
+Code:
+```python
+{function_code[:3000]}
+```
+
+Context:
+- Called by: {', '.join(called_by[:3]) if called_by else 'entry point'}
+- Calls: {', '.join(calls[:5]) if calls else 'no function calls'}
+- Complexity: {context.get('complexity', 'unknown')}
+
+Generate a professional docstring with:
+1. Brief one-line description
+2. Detailed explanation of what the function does
+3. All parameters with types and descriptions
+4. Return value with type and description
+5. Example usage if helpful
+6. Any important notes or edge cases
+
+Output ONLY the docstring text (no triple quotes, no code blocks):"""
+            
+            result = self.gemini_enhancer.client.models.generate_content(
+                model=self.gemini_enhancer.model,
+                contents=prompt
+            )
+            
+            if result and result.text:
+                docstring = result.text.strip()
+                # Clean up any markdown artifacts
+                docstring = docstring.strip('`"\' \n')
+                if docstring.startswith('python'):
+                    docstring = docstring[6:].strip()
+                return docstring
+            
+            return self._fallback_docstring(function_name, context)
+            
+        except Exception as e:
+            logger.warning(f"Gemini generation failed: {e}")
+            return self._fallback_docstring(function_name, context)
     
     def generate_class_docstring(
         self,
@@ -355,7 +453,44 @@ Generate ONLY the docstring text:
         return prompt
     
     def _fallback_docstring(self, function_name: str, context: Dict[str, Any]) -> str:
-        """Generate basic docstring when model unavailable"""
+        """Generate docstring when Phi-3 fails - tries Gemini first, then basic fallback"""
+        
+        # Try Gemini as smart fallback
+        if self.gemini_enhancer and self.gemini_enhancer.available:
+            try:
+                func_code = context.get('code', '')
+                if func_code:
+                    # Use Gemini to generate documentation
+                    prompt = f"""Generate a comprehensive docstring for this function:
+
+Function name: {function_name}
+Code:
+{func_code[:2000]}
+
+Context:
+- Called by: {', '.join(context.get('called_by', [])[:3]) or 'unknown'}
+- Calls: {', '.join(context.get('calls', [])[:5]) or 'none'}
+- Complexity: {context.get('complexity', 'unknown')}
+
+Generate a professional docstring with:
+- Brief description
+- Args with types
+- Returns
+- Example if useful
+
+Output ONLY the docstring text (no code blocks):"""
+                    
+                    result = self.gemini_enhancer.client.models.generate_content(
+                        model=self.gemini_enhancer.model,
+                        contents=prompt
+                    )
+                    if result and result.text:
+                        logger.info(f"✅ Used Gemini fallback for {function_name}")
+                        return result.text.strip()
+            except Exception as gemini_e:
+                logger.warning(f"Gemini fallback failed: {gemini_e}")
+        
+        # Basic fallback if Gemini also fails
         calls = context.get('calls', [])
         complexity = context.get('complexity', 1)
         

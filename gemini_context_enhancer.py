@@ -54,7 +54,37 @@ class GeminiContextEnhancer:
             # New google.genai API structure
             # Configure client with API key
             from google.genai import Client
-            self.client = Client(api_key=GEMINI_API_KEY)
+            import signal
+            import threading
+            
+            # Use a timeout for SSL initialization which can hang
+            client_result = [None]
+            init_error = [None]
+            
+            def init_client():
+                try:
+                    client_result[0] = Client(api_key=GEMINI_API_KEY)
+                except Exception as e:
+                    init_error[0] = e
+            
+            init_thread = threading.Thread(target=init_client)
+            init_thread.daemon = True
+            init_thread.start()
+            init_thread.join(timeout=10)  # 10 second timeout
+            
+            if init_thread.is_alive():
+                print("⚠️  Gemini client initialization timed out (SSL/network issue)")
+                print("   System will run in fallback mode")
+                return
+            
+            if init_error[0]:
+                raise init_error[0]
+            
+            if client_result[0] is None:
+                print("⚠️  Gemini client failed to initialize")
+                return
+            
+            self.client = client_result[0]
             
             # The new API uses client.models.generate_content() instead of GenerativeModel
             self.model = self.client

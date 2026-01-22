@@ -48,13 +48,10 @@ try:
         print("⚠️ Will attempt to initialize on first request")
         doc_generator = None
     
-    # Initialize RAG system
-    try:
-        rag_system = CodeRAGSystem()
-        print("✅ RAG system initialized for context-aware generation")
-    except Exception as e:
-        print(f"⚠️ RAG system initialization failed: {e}")
-        rag_system = None
+    # Skip RAG system for faster startup (downloads large model)
+    # Users on slow connections or without GPU will benefit
+    rag_system = None
+    print("⚠️ RAG system skipped for faster startup (optional feature)")
         
 except ImportError as e:
     print(f"❌ Import error: {e}")
@@ -695,7 +692,7 @@ async def root():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Advanced Documentation Generator - FIXED (No More Placeholders!)</title>
+        <title>Context-Aware-Documentation-Generator</title>
         <style>
             body { 
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -882,13 +879,11 @@ async def root():
     <body>
         <div class="container">
             <div class="header">
-                <h1>🚀 Advanced Documentation Generator - COMPLETELY FIXED!</h1>
-                <p class="subtitle">✅ Real Code Analysis - GUI Support - 100% Coverage - No Placeholders!</p>
+                <h1>🚀 Context-Aware-Documentation-Generator</h1>
+                <p class="subtitle">✅ Real Code Analysis - GUI!</p>
             </div>
             
-            <div class="password-info">
-                <strong>🔐 Secure Access:</strong> nOtE7thIs | <strong>🌐 Public URL:</strong> Colab + ngrok Ready
-            </div>
+    
             
             <form onsubmit="generateDocs(event)">
                 <div class="form-group">
@@ -1231,11 +1226,11 @@ async def generate_docs(
                                 print(f"\n  ⚠️  Quality scores unavailable (fix compliance violations first)")
                         
                         else:
-                            # For non-Sphinx styles (technical_comprehensive, etc.): different metrics
+                            # For non-Sphinx styles: Calculate same quality metrics
                             print(f"\n🔹 DOCUMENTATION QUALITY METRICS ({doc_style} style):")
                             print(f"  Style: {doc_style}")
                             
-                            # Basic quality checks (no Sphinx format enforcement)
+                            # Basic content checks
                             word_count = len(result.split())
                             line_count = len(result.split('\n'))
                             has_headings = bool(re.search(r'^#{1,6} ', result, re.MULTILINE))
@@ -1247,12 +1242,65 @@ async def generate_docs(
                             print(f"    - Has Structure: {'✅' if has_headings else '❌'} (headings)")
                             print(f"    - Has Examples: {'✅' if has_code_blocks else '❌'} (code blocks)")
                             
-                            # Calculate readability score
-                            avg_words_per_line = word_count / max(line_count, 1)
-                            readability_score = min(100, (word_count / 100) * 20 + 50)  # Simple heuristic
+                            # Calculate Evidence Coverage (check for important sections)
+                            section_patterns = [
+                                (r'(description|overview|summary)', 'Description'),
+                                (r'(parameter|argument|arg)', 'Parameters'),
+                                (r'(return|output)', 'Returns'),
+                                (r'(example|usage|sample)', 'Examples'),
+                                (r'(note|warning|important)', 'Notes'),
+                                (r'(function|method|class|module)', 'Component Docs'),
+                            ]
+                            sections_found = 0
+                            result_lower = result.lower()
+                            for pattern, name in section_patterns:
+                                if re.search(pattern, result_lower):
+                                    sections_found += 1
+                            evidence_coverage = sections_found / len(section_patterns)
                             
-                            print(f"\n  🎯 Estimated Quality Score: {readability_score:.1%}")
-                            print(f"     (Based on: completeness, structure, examples)")
+                            # Calculate Consistency (check for internal references)
+                            # Count defined terms vs referenced terms
+                            defined_funcs = len(re.findall(r'(def |function |method )\w+', result_lower))
+                            referenced_funcs = len(re.findall(r'`\w+`|``\w+``', result))
+                            consistency = min(1.0, 0.5 + (defined_funcs + referenced_funcs) / max(word_count / 100, 1))
+                            
+                            # Calculate Non-Tautology (unique info density)
+                            unique_words = len(set(result.lower().split()))
+                            total_words = len(result.split())
+                            lexical_diversity = unique_words / max(total_words, 1)
+                            
+                            # Penalize very repetitive text
+                            sentences = re.split(r'[.!?]+', result)
+                            unique_sentences = len(set(s.strip().lower() for s in sentences if s.strip()))
+                            sentence_diversity = unique_sentences / max(len(sentences), 1)
+                            non_tautology = (lexical_diversity * 0.4 + sentence_diversity * 0.6)
+                            
+                            # Calculate Brevity Efficiency
+                            avg_sentence_len = total_words / max(len(sentences), 1)
+                            # Ideal: 15-25 words per sentence
+                            if avg_sentence_len < 10:
+                                brevity = 0.7  # Too terse
+                            elif avg_sentence_len > 40:
+                                brevity = 0.6  # Too verbose
+                            elif 15 <= avg_sentence_len <= 25:
+                                brevity = 1.0  # Ideal
+                            else:
+                                brevity = 0.85  # Acceptable
+                            
+                            # Calculate Overall Score
+                            overall_quality = (
+                                0.50 * evidence_coverage +
+                                0.20 * consistency +
+                                0.20 * non_tautology +
+                                0.10 * brevity
+                            )
+                            
+                            print(f"\n  📊 Quality Scores (0-100%):")
+                            print(f"    - Evidence Coverage: {evidence_coverage:.1%} (weight: 50%)")
+                            print(f"    - Consistency: {consistency:.1%} (weight: 20%)")
+                            print(f"    - Non-Tautology: {non_tautology:.1%} (weight: 20%)")
+                            print(f"    - Brevity Efficiency: {brevity:.1%} (weight: 10%)")
+                            print(f"\n  🎯 Overall Quality Score: {overall_quality:.1%}")
                             
                     except Exception as eval_e:
                         print(f"  ⚠️ Quality evaluation failed: {eval_e}")
@@ -1287,6 +1335,8 @@ async def generate_docs(
                         print(f"    - Lexical Diversity: {diversity:.2%}")
                         print(f"    - Sentences: {sentences}")
                         print(f"  💡 Provide context text for BLEU/METEOR comparison")
+                except Exception as metrics_e:
+                    print(f"  ⚠️ NLP metrics evaluation failed: {metrics_e}")
                 
                 print("\n" + "="*60 + "\n")
                 
