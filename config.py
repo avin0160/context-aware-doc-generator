@@ -1,9 +1,9 @@
 # Configuration file for the Context-Aware Documentation Generator
 
 # Personal Information
-AUTHOR_NAME = "team-8"
-AUTHOR_EMAIL = "team8@example.com"
-GITHUB_USERNAME = "team-8"
+AUTHOR_NAME = "t8"
+AUTHOR_EMAIL = "NA"
+GITHUB_USERNAME = "NA"
 SYSTEM_NAME = "charvaka"
 LAPTOP_NAME = "charvaka"
 
@@ -46,8 +46,12 @@ API_PORT = 8000
 # Get your API key from: https://makersuite.google.com/app/apikey
 GEMINI_API_KEY = "AIzaSyBDvgGbMzK12YKBH1eT3oJdBBC00G3cXtA"  # Replace with your actual API key
 GEMINI_MODEL = "models/gemini-2.5-flash"  # Using latest stable flash model
-GEMINI_TEMPERATURE = 0.3
-GEMINI_MAX_TOKENS = 8192  # Increased from 2048 for larger projects
+GEMINI_TEMPERATURE = 0.4  # Slightly higher for more natural/human-like output
+GEMINI_MAX_TOKENS = 16384  # Max tokens for extensive comprehensive documentation
+
+# Gemini Human-Like Mode Configuration
+GEMINI_HUMAN_MODE_TEMPERATURE = 0.6  # More creative, conversational
+GEMINI_HUMAN_MODE_MAX_TOKENS = 32768  # Maximum for extensive documentation
 
 # Phi-3 Model Configuration
 PHI3_MODEL = "microsoft/Phi-3-mini-4k-instruct"
