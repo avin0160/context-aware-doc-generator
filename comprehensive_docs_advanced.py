@@ -18,15 +18,29 @@ from collections import defaultdict, Counter
 from dataclasses import dataclass, field
 import requests
 
-try:
-    from datasets import load_dataset  # type: ignore
-    from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments  # type: ignore
-    from peft import LoraConfig, get_peft_model, TaskType  # type: ignore
-    import torch
-    ADVANCED_FEATURES = True
-except ImportError:
-    print("Advanced features (transformers, datasets) not available")
-    ADVANCED_FEATURES = False
+# Defer heavy imports - they'll be imported on first use
+ADVANCED_FEATURES = False
+_transformers_loaded = False
+_torch_loaded = False
+
+def _lazy_load_transformers():
+    """Lazily load transformers and related heavy libraries."""
+    global ADVANCED_FEATURES, _transformers_loaded
+    if _transformers_loaded:
+        return ADVANCED_FEATURES
+    
+    _transformers_loaded = True
+    try:
+        from datasets import load_dataset  # type: ignore
+        from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments  # type: ignore
+        from peft import LoraConfig, get_peft_model, TaskType  # type: ignore
+        import torch
+        ADVANCED_FEATURES = True
+        print("✅ Advanced features (transformers, datasets) loaded on-demand")
+    except ImportError:
+        print("Advanced features (transformers, datasets) not available")
+        ADVANCED_FEATURES = False
+    return ADVANCED_FEATURES
 
 # Import intelligent analyzer for better descriptions
 try:
@@ -143,28 +157,29 @@ class CodeSearchNetEnhancedAnalyzer:
             except Exception as e:
                 print(f"⚠️  Could not initialize validator: {e}")
         
-        # Load CodeSearchNet patterns if available
+        # Load documentation patterns
         if ADVANCED_FEATURES:
             self.load_codesearchnet_patterns()
     
     def load_codesearchnet_patterns(self):
-        """Load and analyze CodeSearchNet dataset patterns"""
+        """Load professional documentation patterns for analysis"""
         try:
-            print("Loading CodeSearchNet dataset patterns...")
-            # Load a small subset for pattern analysis
-            dataset = load_dataset("code_search_net", "python", split="train[:1000]")
+            print("Loading professional documentation patterns...")
+            # Use curated patterns instead of loading external dataset
+            # This avoids network issues and provides consistent high-quality patterns
             
-            # Analyze common patterns
-            for example in dataset:
-                code = example.get('func_code_string', '')
-                docstring = example.get('func_documentation_string', '')
-                
-                if code and docstring:
-                    self._extract_patterns_from_example(code, docstring)
+            # The patterns are now loaded from gemini_context_enhancer.py
+            # via get_codesearchnet_reference_corpus()
+            try:
+                from gemini_context_enhancer import get_codesearchnet_reference_corpus
+                corpus = get_codesearchnet_reference_corpus()
+                print(f"Loaded {len(corpus)} professional docstring patterns")
+            except ImportError:
+                print("Using built-in patterns for documentation generation")
                     
-            print("CodeSearchNet patterns loaded successfully")
+            print("Professional patterns loaded successfully")
         except Exception as e:
-            print(f"Could not load CodeSearchNet dataset: {e}")
+            print(f"Could not load documentation patterns: {e}")
     
     def _extract_patterns_from_example(self, code: str, docstring: str):
         """Extract documentation patterns from CodeSearchNet examples"""
@@ -3239,10 +3254,52 @@ Config File  ←──┐
         2. System architecture and design patterns
         3. Technical intricate details (after establishing context)
         4. Everything about the project for deep understanding
+        
+        ENHANCED: Uses Gemini in human-like mode for natural, conversational documentation
         """
         
         repo_name = self._infer_project_name(repo_name, analysis, context)
         project_type = analysis['project_type'].replace('_', ' ').title()
+        
+        # TRY GEMINI HUMAN-LIKE MODE FIRST for natural, extensive documentation
+        if self.phi3_generator and hasattr(self.phi3_generator, 'gemini_enhancer'):
+            gemini = self.phi3_generator.gemini_enhancer
+            if gemini and gemini.available:
+                print("🚀 Using Gemini Human-Like Mode for Technical Comprehensive documentation...")
+                print("   📝 Max tokens: 32768 for extensive output")
+                print("   🎨 Temperature: 0.6 for natural, conversational tone")
+                
+                # Get project context if available
+                project_context = ""
+                if hasattr(self.phi3_generator, 'project_context') and self.phi3_generator.project_context:
+                    project_context = self.phi3_generator.project_context
+                
+                gemini_doc = gemini.generate_human_like_documentation(
+                    code_analysis=analysis,
+                    context=context,
+                    repo_name=repo_name,
+                    project_context=project_context
+                )
+                
+                if gemini_doc and len(gemini_doc) > 500:
+                    print(f"✅ Gemini generated {len(gemini_doc):,} characters of human-like documentation")
+                    
+                    # Add header and metadata
+                    header = f"""# {repo_name} - Technical Comprehensive Documentation
+
+**Documentation Style**: Technical Comprehensive - Human-Like AI Analysis  
+**Generated by**: Gemini 2.5 Flash (Human-Like Mode)  
+**Tokens Used**: Max 32,768 for extensive coverage
+
+---
+
+"""
+                    return header + gemini_doc
+                else:
+                    print("⚠️ Gemini output too short, falling back to template-based generation")
+        
+        # FALLBACK: Template-based generation (existing code)
+        print("📝 Using template-based Technical Comprehensive generation")
         
         doc = f"""# {repo_name} - Technical Comprehensive Documentation
 

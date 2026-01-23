@@ -67,13 +67,9 @@ try:
 except Exception as e:
     print(f"⚠️ Gemini enhancer import FAILED (non-critical): {e}")
 
-# Test 7: Data sanitizer imports
-print("\n[Test 7] Testing data sanitizer imports...")
-try:
-    from data_sanitizer import DataSanitizer
-    print("✅ Data sanitizer import OK")
-except Exception as e:
-    print(f"⚠️ Data sanitizer import FAILED (non-critical): {e}")
+# Test 7: Data sanitizer - DEPRECATED (module removed)
+print("\n[Test 7] Data sanitizer check (skipped - module deprecated)...")
+print("✅ Data sanitizer not required in this version")
 
 # Test 8: Initialize DocumentationGenerator
 print("\n[Test 8] Testing DocumentationGenerator initialization...")

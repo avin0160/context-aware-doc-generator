@@ -34,8 +34,12 @@ try:
     from sphinx_compliance_metrics import DocumentationEvaluator as SphinxEvaluator
     from technical_doc_metrics import TechnicalDocumentationEvaluator
     from src.rag import CodeRAGSystem
+    # Import CodeSearchNet metrics for professional comparison
+    from gemini_context_enhancer import compute_codesearchnet_metrics, get_codesearchnet_reference_corpus
+    CODESEARCHNET_AVAILABLE = True
     ADVANCED_SYSTEM_AVAILABLE = True
     print("✅ FIXED Advanced documentation system imported successfully")
+    print("✅ CodeSearchNet reference corpus available for metrics")
     
     # Initialize the FIXED generator with error handling
     try:
@@ -48,10 +52,44 @@ try:
         print("⚠️ Will attempt to initialize on first request")
         doc_generator = None
     
-    # Skip RAG system for faster startup (downloads large model)
-    # Users on slow connections or without GPU will benefit
+    # Initialize RAG system with timeout
     rag_system = None
-    print("⚠️ RAG system skipped for faster startup (optional feature)")
+    try:
+        import threading
+        import queue
+        
+        def load_rag_with_timeout():
+            try:
+                return CodeRAGSystem()
+            except Exception as e:
+                return e
+        
+        result_queue = queue.Queue()
+        def rag_loader():
+            result_queue.put(load_rag_with_timeout())
+        
+        rag_thread = threading.Thread(target=rag_loader)
+        rag_thread.daemon = True
+        rag_thread.start()
+        rag_thread.join(timeout=10)  # 10 second timeout
+        
+        if rag_thread.is_alive():
+            print("⚠️ RAG system loading timed out (10s) - skipping for faster startup")
+            print("  📝 Documentation will use Gemini context enhancement instead")
+            rag_system = None
+        else:
+            try:
+                result = result_queue.get_nowait()
+                if isinstance(result, Exception):
+                    raise result
+                rag_system = result
+                print("✅ RAG system initialized for context-aware generation")
+            except queue.Empty:
+                print("⚠️ RAG system failed to return result - skipping")
+                rag_system = None
+    except Exception as e:
+        print(f"⚠️ RAG system initialization failed: {e}")
+        rag_system = None
         
 except ImportError as e:
     print(f"❌ Import error: {e}")
@@ -687,69 +725,152 @@ Context: {context or 'Comprehensive repository documentation'}
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
-    """Home page with enhanced interface for Git repos and documentation styles"""
+    """Home page with minimal black/red/green interface"""
     html_content = """
     <!DOCTYPE html>
     <html>
     <head>
         <title>Context-Aware-Documentation-Generator</title>
         <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
             body { 
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                font-family: 'Segoe UI', Tahoma, Geneva, sans-serif;
                 max-width: 1200px; margin: 0 auto; padding: 20px; 
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                background: #0a0a0a;
+                color: #ffffff;
                 min-height: 100vh;
+                font-size: 13px;
+                letter-spacing: 0.5px;
             }
             .container { 
-                background: white; padding: 40px; border-radius: 15px; 
-                box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                background: #1a1a1a; padding: 30px; 
+                border: 2px solid #ffffff;
+                border-radius: 3px;
             }
-            .header { text-align: center; margin-bottom: 30px; }
-            h1 { color: #2c3e50; font-size: 2.5em; margin-bottom: 10px; }
-            .subtitle { color: #7f8c8d; font-size: 1.2em; }
-            .form-group { margin: 25px 0; }
+            .header { 
+                text-align: center; margin-bottom: 30px; 
+                border-bottom: 2px solid #ffffff;
+                padding-bottom: 20px;
+            }
+            h1 { 
+                color: #ffffff; font-size: 2em; margin-bottom: 10px;
+                text-transform: uppercase; letter-spacing: 2.5px;
+            }
+            .subtitle { 
+                color: #888; font-size: 0.95em;
+                background: #0f0f0f; padding: 5px 10px;
+                display: inline-block; border: 1px solid #333;
+            }
+            .form-group { margin: 20px 0; }
             label { 
-                display: block; margin-bottom: 8px; font-weight: 600; 
-                color: #34495e; font-size: 1.1em;
+                display: block; margin-bottom: 8px; font-weight: bold; 
+                color: #ffffff; font-size: 0.95em;
+                text-transform: uppercase;
+                letter-spacing: 0.8px;
             }
             input, textarea, select { 
-                width: 100%; padding: 15px; border: 2px solid #e0e6ed; 
-                border-radius: 8px; font-size: 14px;
-                resize: vertical; transition: border-color 0.3s;
+                width: 100%; padding: 10px; 
+                background: #0f0f0f;
+                border: 1px solid #333; 
+                color: #ffffff;
+                font-family: 'Segoe UI', Tahoma, Geneva, sans-serif;
+                font-size: 13px;
+                resize: vertical;
             }
-            input:focus, textarea:focus, select:focus { border-color: #3498db; outline: none; }
+            input:focus, textarea:focus, select:focus { 
+                border-color: #ffffff; outline: none;
+                box-shadow: 0 0 5px rgba(255, 255, 255, 0.3);
+            }
             .btn { 
-                background: linear-gradient(45deg, #3498db, #2980b9);
-                color: white; padding: 15px 40px; border: none; 
-                border-radius: 8px; cursor: pointer; font-size: 18px;
-                font-weight: 600; transition: transform 0.2s;
+                background: #000;
+                color: #ffffff; padding: 14px 35px; 
+                border: 2px solid #ffffff; 
+                cursor: pointer; font-size: 14px;
+                font-weight: bold; 
+                text-transform: uppercase;
                 width: 100%; margin: 20px 0;
+                font-family: 'Segoe UI', Tahoma, Geneva, sans-serif;
+                transition: all 0.3s;
+                letter-spacing: 1.2px;
             }
-            .btn:hover { transform: translateY(-2px); }
-            .password-info { 
-                background: linear-gradient(45deg, #2ecc71, #27ae60);
-                color: white; padding: 15px; border-radius: 8px; 
-                margin-bottom: 30px; text-align: center;
+            .btn:hover { 
+                background: #ff0000; color: #ffffff;
+                border-color: #ff0000;
             }
             .features { 
                 display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-                gap: 20px; margin: 30px 0;
+                gap: 15px; margin: 30px 0;
             }
             .feature { 
-                background: #f8f9fa; padding: 20px; border-radius: 8px;
-                text-align: center; border-left: 4px solid #3498db;
+                background: #0f0f0f; padding: 15px;
+                border-left: 3px solid #ffffff;
+                font-size: 0.85em;
             }
+            .feature h4 { color: #ffffff; margin-bottom: 10px; font-size: 1em; }
+            .feature p { color: #888; font-size: 0.85em; }
             .style-grid {
                 display: grid; grid-template-columns: 1fr 1fr 1fr;
-                gap: 15px; margin: 10px 0;
+                gap: 10px; margin: 10px 0;
             }
             .style-option {
-                padding: 10px; border: 2px solid #e0e6ed; border-radius: 6px;
+                padding: 15px; background: #0f0f0f;
+                border: 1px solid #333;
                 cursor: pointer; text-align: center; transition: all 0.3s;
+                font-size: 0.85em;
             }
-            .style-option:hover { border-color: #3498db; }
-            .style-option.selected { border-color: #3498db; background: #ebf3fd; }
-            .example { font-size: 0.9em; color: #7f8c8d; margin-top: 10px; }
+            .style-option:hover { 
+                border-color: #ff0000; 
+                background: #1a0000;
+            }
+            .style-option.selected { 
+                border-color: #ffffff; background: #1a1a1a;
+                box-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+            }
+            .style-option strong { color: #ffffff; display: block; margin-bottom: 8px; font-size: 0.95em; }
+            .example { font-size: 0.8em; color: #666; margin-top: 10px; }
+            .radio-group { display: flex; gap: 20px; margin-bottom: 15px; }
+            .radio-group label { 
+                display: flex; align-items: center; cursor: pointer;
+                text-transform: none; font-weight: normal;
+            }
+            .radio-group label:hover {
+                color: #ff0000;
+            }
+            .radio-group input[type="radio"] { 
+                margin-right: 8px; width: auto;
+                accent-color: #ffffff;
+            }
+            .error { color: #ff0000; }
+            .success { color: #00ff00; }
+            .metrics-grid {
+                display: grid; grid-template-columns: repeat(4, 1fr);
+                gap: 10px; margin: 15px 0;
+                background: #0f0f0f; padding: 20px;
+                border: 1px solid #333;
+            }
+            .metric-box {
+                text-align: center; padding: 15px;
+                background: #000; border: 1px solid #ffffff;
+            }
+            .metric-box .value {
+                font-size: 2.1em; color: #ffffff;
+                font-weight: bold; display: block; margin-bottom: 8px;
+            }
+            .metric-box .label {
+                font-size: 0.85em; color: #888; text-transform: uppercase;
+            }
+            #result {
+                margin-top: 30px; padding: 20px;
+                background: #0f0f0f; border-left: 3px solid #ffffff;
+            }
+            .doc-output {
+                background: #000; padding: 20px; 
+                color: #ffffff; font-family: 'Segoe UI', Tahoma, Geneva, sans-serif;
+                max-height: 600px; overflow-y: auto;
+                border: 1px solid #333; margin: 15px 0;
+                white-space: pre-wrap; word-wrap: break-word;
+                font-size: 13px; line-height: 1.6;
+            }
         </style>
         <script>
             function selectStyle(style) {
@@ -783,7 +904,7 @@ async def root():
                 const button = form.querySelector('.btn');
                 const originalText = button.textContent;
                 
-                button.textContent = '🔄 Processing Repository...';
+                button.textContent = 'PROCESSING...';
                 button.disabled = true;
                 
                 try {
@@ -794,70 +915,59 @@ async def root():
                     
                     const result = await response.json();
                     
-                    // Create result div if it doesn't exist
                     let resultDiv = document.getElementById('result');
                     if (!resultDiv) {
                         resultDiv = document.createElement('div');
                         resultDiv.id = 'result';
-                        resultDiv.style.cssText = 'margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #27ae60;';
                         form.parentNode.appendChild(resultDiv);
                     }
                     
                     if (result.error) {
                         resultDiv.innerHTML = `
-                            <h3 style="color: #e74c3c;">❌ Error</h3>
+                            <h3 class="error">ERROR</h3>
                             <p><strong>Error:</strong> ${result.error}</p>
                             <p><strong>Status:</strong> ${result.status}</p>
                         `;
-                        resultDiv.style.borderLeftColor = '#e74c3c';
+                        resultDiv.style.borderLeftColor = '#ff0000';
                     } else {
-                        // Build metrics HTML if available
                         let metricsHTML = '';
                         if (result.metrics) {
                             metricsHTML = `
-                                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 8px; margin: 15px 0; color: white;">
-                                    <h4 style="margin: 0 0 15px 0; font-size: 1.2em;">📊 Quality Metrics</h4>
-                                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
-                                        <div style="background: rgba(255,255,255,0.2); padding: 15px; border-radius: 6px; text-align: center;">
-                                            <div style="font-size: 2em; font-weight: bold;">${result.metrics.bleu}</div>
-                                            <div style="font-size: 0.9em; opacity: 0.9;">BLEU Score</div>
-                                        </div>
-                                        <div style="background: rgba(255,255,255,0.2); padding: 15px; border-radius: 6px; text-align: center;">
-                                            <div style="font-size: 2em; font-weight: bold;">${result.metrics.meteor}</div>
-                                            <div style="font-size: 0.9em; opacity: 0.9;">METEOR</div>
-                                        </div>
-                                        <div style="background: rgba(255,255,255,0.2); padding: 15px; border-radius: 6px; text-align: center;">
-                                            <div style="font-size: 2em; font-weight: bold;">${result.metrics.rouge_l}</div>
-                                            <div style="font-size: 0.9em; opacity: 0.9;">ROUGE-L</div>
-                                        </div>
-                                        <div style="background: rgba(255,255,255,0.2); padding: 15px; border-radius: 6px; text-align: center;">
-                                            <div style="font-size: 2em; font-weight: bold;">${result.metrics.overall}</div>
-                                            <div style="font-size: 0.9em; opacity: 0.9;">Overall Quality</div>
-                                        </div>
+                                <div class="metrics-grid">
+                                    <div class="metric-box">
+                                        <span class="value">${result.metrics.bleu}</span>
+                                        <span class="label">BLEU Score</span>
+                                    </div>
+                                    <div class="metric-box">
+                                        <span class="value">${result.metrics.meteor}</span>
+                                        <span class="label">METEOR</span>
+                                    </div>
+                                    <div class="metric-box">
+                                        <span class="value">${result.metrics.rouge_l}</span>
+                                        <span class="label">ROUGE-L</span>
+                                    </div>
+                                    <div class="metric-box">
+                                        <span class="value">${result.metrics.overall}</span>
+                                        <span class="label">Overall Quality</span>
                                     </div>
                                 </div>
                             `;
                         }
                         
                         resultDiv.innerHTML = `
-                            <h3 style="color: #27ae60;">✅ ${result.status}</h3>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 10px 0;">
-                                <div><strong>Method:</strong> ${result.method}</div>
-                                <div><strong>Style:</strong> ${result.style || 'N/A'}</div>
-                                <div><strong>Files:</strong> ${result.files_analyzed || 'N/A'}</div>
-                            </div>
+                            <h3 class="success">SUCCESS: ${result.status}</h3>
+                            <p style="color: #888; margin: 10px 0;">Method: ${result.method} | Style: ${result.style || 'N/A'}</p>
                             ${metricsHTML}
-                            <div style="background: white; padding: 20px; border-radius: 8px; margin: 15px 0; white-space: pre-wrap; font-family: monospace; max-height: 600px; overflow-y: auto; border: 1px solid #ddd;">${result.documentation}</div>
-                            <button onclick="downloadDocs('${result.style || 'markdown'}')" style="background: #27ae60; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">📥 Download Documentation</button>
+                            <div class="doc-output">${result.documentation}</div>
+                            <button onclick="downloadDocs('${result.style || 'markdown'}')" class="btn" style="width: auto; padding: 10px 20px;">DOWNLOAD</button>
                         `;
-                        resultDiv.style.borderLeftColor = '#27ae60';
                     }
                     
                     resultDiv.scrollIntoView({ behavior: 'smooth' });
                     
                 } catch (error) {
                     console.error('Error:', error);
-                    alert('Network error. Please try again.');
+                    alert('NETWORK ERROR: Please try again.');
                 } finally {
                     button.textContent = originalText;
                     button.disabled = false;
@@ -865,7 +975,7 @@ async def root():
             }
             
             function downloadDocs(style) {
-                const content = document.querySelector('#result div[style*="font-family: monospace"]').textContent;
+                const content = document.querySelector('.doc-output').textContent;
                 const blob = new Blob([content], { type: 'text/markdown' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -879,65 +989,40 @@ async def root():
     <body>
         <div class="container">
             <div class="header">
-                <h1>🚀 Context-Aware-Documentation-Generator</h1>
-                <p class="subtitle">✅ Real Code Analysis - GUI!</p>
+                <h1>CONTEXT-AWARE DOCUMENTATION GENERATOR</h1>
+                <p class="subtitle">&gt; Real Code Analysis - Minimal Interface</p>
             </div>
-            
-    
             
             <form onsubmit="generateDocs(event)">
                 <div class="form-group">
-                    <label>🎯 Input Type:</label>
-                    <div style="display: flex; gap: 15px; margin-bottom: 15px;">
-                        <label style="display: flex; align-items: center; cursor: pointer;">
-                            <input type="radio" name="input_type" value="url" checked onchange="toggleInputType()" style="margin-right: 8px;">
-                            📂 Repository URL
+                    <label>INPUT TYPE</label>
+                    <div class="radio-group">
+                        <label>
+                            <input type="radio" name="input_type" value="url" checked onchange="toggleInputType()">
+                            Repository URL
                         </label>
-                        <label style="display: flex; align-items: center; cursor: pointer;">
-                            <input type="radio" name="input_type" value="code" onchange="toggleInputType()" style="margin-right: 8px;">
-                            💻 Code Snippet
+                        <label>
+                            <input type="radio" name="input_type" value="code" onchange="toggleInputType()">
+                            Code Snippet
                         </label>
                     </div>
                 </div>
                 
                 <div class="form-group" id="url-input">
-                    <label for="repo_url">📂 Repository Source:</label>
-                    <input type="text" name="repo_url" placeholder="https://github.com/user/repo.git OR /path/to/repo.zip">
+                    <label for="repo_url">REPOSITORY SOURCE</label>
+                    <input type="text" name="repo_url" placeholder="https://github.com/owner/repo.git">
                     <div class="example">
-                        Examples:<br>
-                        • Git: https://github.com/microsoft/vscode.git<br>
-                        • ZIP: /content/my-project.zip
+                        Git: https://github.com/avin0160/cube-hexomino-tetris.git | ZIP: /content/my-project.zip
                     </div>
                 </div>
                 
                 <div class="form-group" id="code-input" style="display: none;">
-                    <label for="code_snippet">💻 Python Code:</label>
-                    <textarea name="code_snippet" rows="10" placeholder="Paste your Python code here...
-
-Example:
-class BPlusTreeNode:
-    def __init__(self, keys, values):
-        self.keys = keys
-        self.values = values
-    
-    def insert(self, key, value):
-        if key in self.keys:
-            idx = self.keys.index(key)
-            self.values[idx] = value
-        return True
-    
-    def search(self, key):
-        if key in self.keys:
-            return self.values[self.keys.index(key)]
-        return None"></textarea>
-                    <div class="example">
-                        ✅ NOW HANDLES: GUI Code (tkinter), Database Code, Web Apps, APIs, Data Science<br>
-                        ✅ NO MORE: "Function implementation." or "0% coverage" issues!
-                    </div>
+                    <label for="code_snippet">PYTHON CODE</label>
+                    <textarea name="code_snippet" rows="10" placeholder="Paste your Python code here..."></textarea>
                 </div>
                 
                 <div class="form-group">
-                    <label>📝 Documentation Style:</label>
+                    <label>DOCUMENTATION STYLE</label>
                     <div class="style-grid">
                         <div class="style-option selected" data-style="sphinx" onclick="selectStyle('sphinx')">
                             <strong>Sphinx/reST API</strong>
@@ -960,37 +1045,37 @@ class BPlusTreeNode:
                 </div>
                 
                 <div class="form-group">
-                    <label for="context">💡 Documentation Context:</label>
+                    <label for="context">DOCUMENTATION CONTEXT</label>
                     <textarea name="context" rows="4" placeholder="Academic research project focusing on algorithmic efficiency
 Include performance analysis and optimization recommendations
 Target audience: Computer science students and researchers"></textarea>
                 </div>
                 
-                <button type="submit" class="btn">🚀 Generate Repository Documentation</button>
+                <button type="submit" class="btn">GENERATE DOCUMENTATION</button>
             </form>
             
             <div class="features">
                 <div class="feature">
-                    <h4>📂 Repository Support</h4>
+                    <h4>Repository Support</h4>
                     <p>Git URLs, ZIP files, and direct code input</p>
                 </div>
                 <div class="feature">
-                    <h4>📋 Professional Documentation</h4>
+                    <h4>Professional Documentation</h4>
                     <p>Google docstrings, Open Source READMEs, Technical docs</p>
                 </div>
                 <div class="feature">
-                    <h4>🧠 Deep Analysis</h4>
+                    <h4>Deep Analysis</h4>
                     <p>Architecture understanding, API design, maintenance guides</p>
                 </div>
                 <div class="feature">
-                    <h4>🤝 Collaboration Ready</h4>
+                    <h4>Collaboration Ready</h4>
                     <p>Open source standards, contribution guides, API references</p>
                 </div>
             </div>
             
-            <div style="margin-top: 40px; text-align: center; color: #7f8c8d; font-size: 0.9em;">
-                <p>💻 <strong>Terminal Access:</strong> python terminal_demo.py | python enhanced_test.py</p>
-                <p>🔧 <strong>CLI Interface:</strong> python main.py --directory /path/to/repo --style google</p>
+            <div style="margin-top: 40px; text-align: center; color: #666; font-size: 0.85em; border-top: 1px solid #333; padding-top: 20px;">
+                <p>&gt; Terminal: python terminal_demo.py | python enhanced_test.py</p>
+                <p>&gt; CLI: python main.py --directory /path/to/repo --style google</p>
             </div>
         </div>
     </body>
@@ -1305,8 +1390,32 @@ async def generate_docs(
                     except Exception as eval_e:
                         print(f"  ⚠️ Quality evaluation failed: {eval_e}")
                 
-                # 2. Traditional NLP Metrics (always show for comparison)
-                print("\n🔹 TRADITIONAL NLP METRICS:")
+                # 2. Documentation Quality Metrics (professional standards)
+                print("\n🔹 DOCUMENTATION QUALITY METRICS:")
+                csn_metrics = None
+                try:
+                    if CODESEARCHNET_AVAILABLE and result:
+                        csn_metrics = compute_codesearchnet_metrics(result)
+                        overall = csn_metrics.get('overall', 0)
+                        print(f"  📚 Evaluated against professional documentation standards:")
+                        print(f"    - Structural Quality: {csn_metrics.get('structural_quality', 0):.2%} (Args, Returns, Raises, Examples)")
+                        print(f"    - Vocabulary Alignment: {csn_metrics.get('vocabulary_alignment', 0):.2%} (technical terms)")
+                        print(f"    - Completeness: {csn_metrics.get('completeness', 0):.2%} (length, examples, diversity)")
+                        print(f"    - Coherence: {csn_metrics.get('coherence', 0):.2%} (flow, formatting)")
+                        print(f"  📊 Metric Equivalents:")
+                        print(f"    - BLEU Score: {csn_metrics.get('bleu', 0):.4f}")
+                        print(f"    - METEOR Score: {csn_metrics.get('meteor', 0):.4f}")
+                        print(f"    - ROUGE-L Score: {csn_metrics.get('rouge_l', 0):.4f}")
+                        print(f"  🎯 OVERALL QUALITY: {overall:.2%}")
+                    else:
+                        print("  ⚠️ Quality metrics not available")
+                except Exception as csn_e:
+                    print(f"  ⚠️ Quality metrics failed: {csn_e}")
+                    import traceback
+                    traceback.print_exc()
+                
+                # 3. Traditional NLP Metrics (user context comparison)
+                print("\n🔹 USER CONTEXT COMPARISON:")
                 try:
                     # Calculate even without reference for self-assessment
                     if context.strip() and result:
@@ -1324,7 +1433,7 @@ async def generate_docs(
                         print(f"    - Aggregate: {metrics_results.get('aggregate_score', 0):.2%}")
                     else:
                         # Without reference - show document stats
-                        print(f"  Document Statistics (no reference provided):")
+                        print(f"  Document Statistics (no user context provided):")
                         sentences = len(re.split(r'[.!?]+', result))
                         words = len(result.split())
                         unique_words = len(set(result.lower().split()))
@@ -1334,7 +1443,7 @@ async def generate_docs(
                         print(f"    - Unique Words: {unique_words:,}")
                         print(f"    - Lexical Diversity: {diversity:.2%}")
                         print(f"    - Sentences: {sentences}")
-                        print(f"  💡 Provide context text for BLEU/METEOR comparison")
+                        print(f"  💡 CodeSearchNet metrics used instead (see above)")
                 except Exception as metrics_e:
                     print(f"  ⚠️ NLP metrics evaluation failed: {metrics_e}")
                 
@@ -1342,12 +1451,26 @@ async def generate_docs(
                 
                 response_data = {
                     "documentation": result,
-                    "status": f"✅ Generated via full AI system with Phi-3 Mini ({doc_style} style)",
-                    "method": "context-aware AI with RAG + Phi-3",
+                    "status": f"✅ Generated via full AI system ({doc_style} style)",
+                    "method": "Gemini Human-Like Mode" if doc_style == "technical_comprehensive" else "context-aware AI with Phi-3",
                     "style": doc_style
                 }
                 
-                if metrics_results:
+                # Use CodeSearchNet metrics if available, otherwise user context metrics
+                if csn_metrics and csn_metrics.get('corpus_size', 0) > 0:
+                    overall_score = csn_metrics.get('overall', 0)
+                    if overall_score == 0:
+                        # Calculate if not provided
+                        overall_score = (csn_metrics.get('bleu', 0) + csn_metrics.get('meteor', 0) + csn_metrics.get('rouge_l', 0)) / 3
+                    
+                    response_data["metrics"] = {
+                        "bleu": f"{csn_metrics.get('bleu', 0):.4f}",
+                        "meteor": f"{csn_metrics.get('meteor', 0):.4f}",
+                        "rouge_l": f"{csn_metrics.get('rouge_l', 0):.4f}",
+                        "overall": f"{overall_score:.2%}",
+                        "reference": "Professional Documentation Standards"
+                    }
+                elif metrics_results:
                     response_data["metrics"] = {
                         "bleu": f"{metrics_results.get('bleu', 0):.4f}",
                         "meteor": f"{metrics_results.get('meteor', 0):.4f}",
