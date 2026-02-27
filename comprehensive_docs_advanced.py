@@ -1303,8 +1303,11 @@ class DocumentationGenerator:
         return f"Handle {func_name.replace('_', ' ')} operations"
     
     def generate_documentation(self, input_data: str, context: str, doc_style: str, 
-                             input_type: str = 'auto', repo_name: str = '') -> str:
+                             input_type: str = 'auto', repo_name: str = '', temperature: float = 0.3) -> str:
         """Generate comprehensive documentation"""
+        
+        # Temperature is passed but not used for Phi-3 (fixed at 0.3 for consistency)
+        # If needed in future, temperature can be used for Gemini enhancement
         
         # Process input
         file_contents = MultiInputHandler.process_input(input_data, input_type)

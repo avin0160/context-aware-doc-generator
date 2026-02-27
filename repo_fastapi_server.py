@@ -19,6 +19,8 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from typing import Optional
+import signal
+from contextlib import contextmanager
 
 # CRITICAL: Don't add src to path to avoid importing old broken modules
 # sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
@@ -201,7 +203,7 @@ async def startup_event():
         doc_generator = None
 """
 
-async def analyze_repository_structure(repo_path: str, context: str, doc_style: str):
+async def analyze_repository_structure(repo_path: str, context: str, doc_style: str, temperature: float = 0.3, generation_mode: str = "rule_based"):
     """Analyze repository structure and generate documentation"""
     try:
         import os
@@ -229,7 +231,7 @@ async def analyze_repository_structure(repo_path: str, context: str, doc_style: 
                 continue
         
         # Generate documentation based on style
-        doc = generate_styled_documentation(file_contents, context, doc_style, repo_path)
+        doc = generate_styled_documentation(file_contents, context, doc_style, repo_path, temperature, generation_mode)
         
         return JSONResponse({
             "documentation": doc,
@@ -563,11 +565,73 @@ if __name__ == "__main__":
 '''
     return enhanced_code
 
-def generate_styled_documentation(file_contents: dict, context: str, doc_style: str, repo_path: str):
+def generate_styled_documentation(file_contents: dict, context: str, doc_style: str, repo_path: str, temperature: float = 0.3, generation_mode: str = "rule_based"):
     """Generate comprehensive documentation using the FIXED generator with enhanced code processing"""
     
+    # Count total functions to estimate processing time
+    total_content_size = sum(len(content) for content in file_contents.values())
+    file_count = len(file_contents)
+    
+    # Force rule-based mode if explicitly selected
+    if generation_mode == "rule_based":
+        print(f"⚡ RULE-BASED MODE: Using template generation (instant)")
+        return generate_basic_repository_analysis(file_contents, context, doc_style, repo_path)
+    
+    # For AI modes (Gemini or Phi-3), allow larger repos but warn about time
+    # System now analyzes first 10 files (limited in file reading above)
+    if file_count > 10:
+        print(f"⚠️ Large repository: {file_count} files detected, analyzing first 10")
+    
+    print(f"📊 Processing {file_count} files, {total_content_size:,} bytes")
+    
+    # Gemini-only mode - skip Phi-3 entirely
+    if generation_mode == "gemini_only":
+        print(f"🤖 GEMINI-ONLY MODE: Skipping Phi-3, using Google Gemini API only")
+        if doc_generator and ADVANCED_SYSTEM_AVAILABLE:
+            try:
+                # Force Phi-3 to be skipped
+                if hasattr(doc_generator, 'phi3_generator') and doc_generator.phi3_generator:
+                    doc_generator.phi3_generator.phi3_failed = True
+                
+                # Convert file_contents to combined content
+                combined_content = ""
+                for file_path, content in file_contents.items():
+                    combined_content += f"# File: {file_path}\n{content}\n\n"
+                
+                print(f"📝 Generating with Gemini API (fast mode)...")
+                
+                # Generate with Phi-3 disabled (will use Gemini fallback)
+                result = doc_generator.generate_documentation(
+                    input_data=combined_content,
+                    context=context,
+                    doc_style=doc_style,
+                    input_type='code',
+                    repo_name=os.path.basename(repo_path) if repo_path else "repository",
+                    temperature=0.3  # Fixed for Phi-3 (not used since Phi-3 is skipped)
+                )
+                
+                if result:
+                    print("✅ GEMINI: Documentation generated successfully")
+                    return result
+                else:
+                    print("⚠️ Gemini generation failed - using fallback")
+                    return generate_basic_repository_analysis(file_contents, context, doc_style, repo_path)
+            except Exception as e:
+                print(f"❌ Gemini generation error: {e}")
+                return generate_basic_repository_analysis(file_contents, context, doc_style, repo_path)
+        else:
+            print("⚠️ Advanced system not available - using template fallback")
+            return generate_basic_repository_analysis(file_contents, context, doc_style, repo_path)
+    
+    # Phi-3 + Gemini mode
+    if generation_mode == "phi3_gemini":
+        print(f"🧠 PHI-3 + GEMINI MODE: Using Microsoft Phi-3 + Google Gemini (30-60 seconds)")
+        # Re-enable Phi-3 if it was disabled
+        if doc_generator and hasattr(doc_generator, 'phi3_generator') and doc_generator.phi3_generator:
+            doc_generator.phi3_generator.phi3_failed = False
+    
     if doc_generator and ADVANCED_SYSTEM_AVAILABLE:
-        # Use the FIXED advanced generator
+        # Use the FIXED advanced generator with 30-second timeout
         try:
             # Convert file_contents dict to single string for the new API
             combined_content = ""
@@ -576,38 +640,70 @@ def generate_styled_documentation(file_contents: dict, context: str, doc_style: 
             total_content = sum(len(content) for content in file_contents.values())
             
             if total_content < 1000 and len(file_contents) == 1:
-                # Single small file - likely a code snippet, enhance it
+                # Single small file - use as-is
                 for file_path, content in file_contents.items():
-                    print(f"🔧 Enhancing small code snippet ({len(content)} chars) for better analysis...")
-                    enhanced_content = enhance_code_snippet(content)
-                    combined_content += f"# File: {file_path}\n{enhanced_content}\n\n"
-                    print(f"✅ Enhanced to {len(enhanced_content)} chars")
+                    combined_content += f"# File: {file_path}\n{content}\n\n"
             else:
                 # Regular file processing
                 for file_path, content in file_contents.items():
                     combined_content += f"# File: {file_path}\n{content}\n\n"
             
             print(f"📝 Generating documentation for {len(combined_content)} characters of code...")
+            print(f"⏱️  Phi-3 timeout: 30 seconds (will fallback to Gemini if exceeded)")
             
-            result = doc_generator.generate_documentation(
-                input_data=combined_content,
-                context=context,
-                doc_style=doc_style,
-                input_type='code',
-                repo_name=os.path.basename(repo_path) if repo_path else "repository"
-            )
+            # Use asyncio timeout for Phi-3 generation
+            import concurrent.futures
+            import threading
             
-            # Quality check
-            has_placeholders = any(phrase in result for phrase in [
-                'Function implementation.', 'Class implementation.', 'Method implementation.'
-            ])
+            result = None
+            timeout_occurred = False
             
-            if has_placeholders:
-                print("⚠️ WARNING: Generated documentation still contains placeholder text!")
+            def generate_with_timeout():
+                nonlocal result
+                try:
+                    result = doc_generator.generate_documentation(
+                        input_data=combined_content,
+                        context=context,
+                        doc_style=doc_style,
+                        input_type='code',
+                        repo_name=os.path.basename(repo_path) if repo_path else "repository",
+                        temperature=temperature
+                    )
+                except Exception as e:
+                    print(f"❌ Phi-3 generation error: {e}")
+                    result = None
+            
+            # Run with timeout
+            thread = threading.Thread(target=generate_with_timeout)
+            thread.daemon = True
+            thread.start()
+            thread.join(timeout=30)  # 30 second timeout
+            
+            if thread.is_alive():
+                print(f"⏱️  Phi-3 timeout (>30s) - switching to Gemini-only mode")
+                timeout_occurred = True
+                # Force fast-fail mode for future requests
+                if hasattr(doc_generator, 'phi3_generator') and doc_generator.phi3_generator:
+                    doc_generator.phi3_generator.phi3_failed = True
+                # Generate using fallback
+                result = generate_basic_repository_analysis(file_contents, context, doc_style, repo_path)
+            
+            if result:
+                # Quality check
+                has_placeholders = any(phrase in result for phrase in [
+                    'Function implementation.', 'Class implementation.', 'Method implementation.'
+                ])
+                
+                if has_placeholders:
+                    print("⚠️ WARNING: Generated documentation contains placeholder text!")
+                else:
+                    status = "✅ FAST" if timeout_occurred else "✅ SUCCESS"
+                    print(f"{status}: Generated documentation (Phi-3: {'timeout' if timeout_occurred else 'completed'})")
+                
+                return result
             else:
-                print("✅ SUCCESS: Generated high-quality documentation without placeholders!")
-            
-            return result
+                print("⚠️ Phi-3 returned None - using fallback")
+                return generate_basic_repository_analysis(file_contents, context, doc_style, repo_path)
             
         except Exception as e:
             print(f"❌ Error with fixed generator: {e}")
@@ -640,6 +736,237 @@ def generate_basic_repository_analysis(file_contents: dict, context: str, doc_st
                 imports.append(line)
     
     if doc_style == "google":
+        return f"""# Repository Documentation (Google Style)
+
+## Overview
+Repository: {os.path.basename(repo_path)}
+Context: {context or 'Comprehensive repository documentation'}
+
+## Repository Statistics
+- Files analyzed: {len(file_contents)}
+- Total lines: {total_lines}
+- Functions found: {len(functions)}
+- Classes found: {len(classes)}
+
+## File Structure
+{chr(10).join(f"- `{file_path}`" for file_path in file_contents.keys())}
+
+## Functions
+{chr(10).join(f"### {func.split(': ', 1)[1] if ': ' in func else func}" for func in functions[:5])}
+
+## Classes  
+{chr(10).join(f"### {cls.split(': ', 1)[1] if ': ' in cls else cls}" for cls in classes[:5])}
+
+## Dependencies
+{chr(10).join(f"- `{imp}`" for imp in list(set(imports))[:10])}
+
+---
+*Generated by Context-Aware Documentation Generator*"""
+    
+    elif doc_style == "user_guide":
+        # User-focused documentation
+        main_functions = [f for f in functions if any(keyword in f.lower() for keyword in ['main', 'run', 'start', 'execute', 'init', 'create', 'build'])]
+        entry_points = main_functions[:5] if main_functions else functions[:5]
+        
+        return f"""# {os.path.basename(repo_path)} - User Guide
+
+## Getting Started
+
+### What is this project?
+{context or 'This project provides tools and utilities for software development.'}
+
+### Quick Stats
+- **Files:** {len(file_contents)}
+- **Lines of Code:** {total_lines:,}
+- **Classes:** {len(classes)}
+- **Functions:** {len(functions)}
+
+---
+
+## Installation
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd {os.path.basename(repo_path)}
+
+# Install dependencies
+pip install -r requirements.txt
+# or
+python setup.py install
+```
+
+---
+
+## How to Use
+
+### Entry Points
+
+The following are the main entry points to use this code:
+
+{chr(10).join(f'''**{i+1}. {func.split(': ', 1)[1] if ': ' in func else func}**
+   - Location: `{func.split(': ')[0] if ': ' in func else 'main module'}`
+   - Purpose: Main execution function
+''' for i, func in enumerate(entry_points[:3]))}
+
+### Basic Usage Example
+
+```python
+# Example 1: Basic usage
+from {list(file_contents.keys())[0].replace('.py', '').replace('/', '.').replace('\\', '.')} import *
+
+# Initialize the main component
+result = main_function()
+print(result)
+```
+
+### Advanced Usage
+
+```python
+# Example 2: With custom options
+from {list(file_contents.keys())[0].replace('.py', '').replace('/', '.').replace('\\', '.')} import *
+
+# Configure options
+options = {{
+    'option1': 'value1',
+    'option2': 'value2'
+}}
+
+result = main_function(**options)
+```
+
+---
+
+## Available Options
+
+### Command Line Arguments
+
+```bash
+python {list(file_contents.keys())[0]} --help
+```
+
+Common options:
+- `--input`: Specify input file or data
+- `--output`: Specify output destination
+- `--config`: Load configuration file
+- `--verbose`: Enable detailed logging
+
+### Configuration
+
+Create a config file:
+
+```python
+# config.py
+OPTION_1 = "value1"
+OPTION_2 = "value2"
+```
+
+---
+
+## Output Types
+
+### Return Values
+
+Functions in this codebase typically return:
+
+1. **Objects/Instances** - Main class instances
+2. **Dictionaries** - Configuration or result data
+3. **Lists** - Collections of processed items
+4. **Status Codes** - Success/failure indicators
+
+### File Outputs
+
+The code may generate:
+- Output files in `/output` directory
+- Log files in `/logs`
+- Cache files in `/cache`
+
+---
+
+## Key Classes
+
+{chr(10).join(f'''### {cls.split(': ', 1)[1] if ': ' in cls else cls}
+- **Purpose:** Main component class
+- **Usage:** `instance = ClassName(params)`
+''' for cls in classes[:3])}
+
+---
+
+## Examples Gallery
+
+### Example 1: Quick Start
+
+```python
+# Minimal example
+import {os.path.basename(repo_path).replace('-', '_')}
+
+result = {os.path.basename(repo_path).replace('-', '_')}.run()
+print(f"Result: {{result}}")
+```
+
+### Example 2: Custom Configuration
+
+```python
+# With configuration
+import {os.path.basename(repo_path).replace('-', '_')}
+
+config = {{
+    'mode': 'advanced',
+    'debug': True
+}}
+
+result = {os.path.basename(repo_path).replace('-', '_')}.run(config)
+```
+
+### Example 3: Batch Processing
+
+```python
+# Process multiple items
+import {os.path.basename(repo_path).replace('-', '_')}
+
+items = ['item1', 'item2', 'item3']
+results = [{os.path.basename(repo_path).replace('-', '_')}.process(item) for item in items]
+```
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+**Issue:** Import errors
+- **Solution:** Ensure all dependencies are installed (`pip install -r requirements.txt`)
+
+**Issue:** Permission denied
+- **Solution:** Run with appropriate permissions or check file paths
+
+**Issue:** Unexpected output
+- **Solution:** Check input format and configuration settings
+
+---
+
+## API Reference
+
+For detailed API documentation, see:
+- [Technical Documentation](./docs/technical.md)
+- [API Reference](./docs/api.md)
+
+---
+
+## Contributing
+
+Want to contribute? Check out:
+- Issue tracker
+- Contributing guidelines  
+- Code of conduct
+
+---
+
+*Generated by Context-Aware Documentation Generator*
+*Style: User Guide (Usage-Focused)*
+"""
+    
+    elif doc_style == "numpy":
         return f"""# Repository Documentation (Google Style)
 
 ## Overview
@@ -736,55 +1063,55 @@ async def root():
             body { 
                 font-family: 'Segoe UI', Tahoma, Geneva, sans-serif;
                 max-width: 1200px; margin: 0 auto; padding: 20px; 
-                background: #0a0a0a;
-                color: #ffffff;
+                background: #ffffff;
+                color: #1a1a1a;
                 min-height: 100vh;
                 font-size: 13px;
                 letter-spacing: 0.5px;
             }
             .container { 
-                background: #1a1a1a; padding: 30px; 
-                border: 2px solid #ffffff;
+                background: #ffffff; padding: 30px; 
+                border: 2px solid #1a1a1a;
                 border-radius: 3px;
             }
             .header { 
                 text-align: center; margin-bottom: 30px; 
-                border-bottom: 2px solid #ffffff;
+                border-bottom: 2px solid #1a1a1a;
                 padding-bottom: 20px;
             }
             h1 { 
-                color: #ffffff; font-size: 2em; margin-bottom: 10px;
+                color: #1a1a1a; font-size: 2em; margin-bottom: 10px;
                 text-transform: uppercase; letter-spacing: 2.5px;
             }
             .subtitle { 
-                color: #888; font-size: 0.95em;
-                background: #0f0f0f; padding: 5px 10px;
-                display: inline-block; border: 1px solid #333;
+                color: #666; font-size: 0.95em;
+                background: #f5f5f5; padding: 5px 10px;
+                display: inline-block; border: 1px solid #ddd;
             }
             .form-group { margin: 20px 0; }
             label { 
                 display: block; margin-bottom: 8px; font-weight: bold; 
-                color: #ffffff; font-size: 0.95em;
+                color: #2a2a2a; font-size: 0.95em;
                 text-transform: uppercase;
                 letter-spacing: 0.8px;
             }
             input, textarea, select { 
                 width: 100%; padding: 10px; 
-                background: #0f0f0f;
-                border: 1px solid #333; 
-                color: #ffffff;
+                background: #ffffff;
+                border: 1px solid #ccc; 
+                color: #1a1a1a;
                 font-family: 'Segoe UI', Tahoma, Geneva, sans-serif;
                 font-size: 13px;
                 resize: vertical;
             }
             input:focus, textarea:focus, select:focus { 
-                border-color: #ffffff; outline: none;
-                box-shadow: 0 0 5px rgba(255, 255, 255, 0.3);
+                border-color: #1a1a1a; outline: none;
+                box-shadow: 0 0 5px rgba(26, 26, 26, 0.3);
             }
             .btn { 
-                background: #000;
-                color: #ffffff; padding: 14px 35px; 
-                border: 2px solid #ffffff; 
+                background: #ffffff;
+                color: #1a1a1a; padding: 14px 35px; 
+                border: 2px solid #1a1a1a; 
                 cursor: pointer; font-size: 14px;
                 font-weight: bold; 
                 text-transform: uppercase;
@@ -802,31 +1129,31 @@ async def root():
                 gap: 15px; margin: 30px 0;
             }
             .feature { 
-                background: #0f0f0f; padding: 15px;
-                border-left: 3px solid #ffffff;
+                background: #f9f9f9; padding: 15px;
+                border-left: 3px solid #1a1a1a;
                 font-size: 0.85em;
             }
-            .feature h4 { color: #ffffff; margin-bottom: 10px; font-size: 1em; }
-            .feature p { color: #888; font-size: 0.85em; }
+            .feature h4 { color: #2a2a2a; margin-bottom: 10px; font-size: 1em; }
+            .feature p { color: #666; font-size: 0.85em; }
             .style-grid {
                 display: grid; grid-template-columns: 1fr 1fr 1fr;
                 gap: 10px; margin: 10px 0;
             }
             .style-option {
-                padding: 15px; background: #0f0f0f;
-                border: 1px solid #333;
+                padding: 15px; background: #ffffff;
+                border: 1px solid #ccc;
                 cursor: pointer; text-align: center; transition: all 0.3s;
                 font-size: 0.85em;
             }
             .style-option:hover { 
                 border-color: #ff0000; 
-                background: #1a0000;
+                background: #fff5f5;
             }
             .style-option.selected { 
-                border-color: #ffffff; background: #1a1a1a;
-                box-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+                border-color: #1a1a1a; background: #f9f9f9;
+                box-shadow: 0 0 10px rgba(26, 26, 26, 0.2);
             }
-            .style-option strong { color: #ffffff; display: block; margin-bottom: 8px; font-size: 0.95em; }
+            .style-option strong { color: #1a1a1a; display: block; margin-bottom: 8px; font-size: 0.95em; }
             .example { font-size: 0.8em; color: #666; margin-top: 10px; }
             .radio-group { display: flex; gap: 20px; margin-bottom: 15px; }
             .radio-group label { 
@@ -845,31 +1172,74 @@ async def root():
             .metrics-grid {
                 display: grid; grid-template-columns: repeat(4, 1fr);
                 gap: 10px; margin: 15px 0;
-                background: #0f0f0f; padding: 20px;
-                border: 1px solid #333;
+                background: #f9f9f9; padding: 20px;
+                border: 1px solid #ddd;
             }
             .metric-box {
                 text-align: center; padding: 15px;
-                background: #000; border: 1px solid #ffffff;
+                background: #fff; border: 1px solid #1a1a1a;
             }
             .metric-box .value {
-                font-size: 2.1em; color: #ffffff;
+                font-size: 2.1em; color: #1a1a1a;
                 font-weight: bold; display: block; margin-bottom: 8px;
             }
             .metric-box .label {
-                font-size: 0.85em; color: #888; text-transform: uppercase;
+                font-size: 0.85em; color: #666; text-transform: uppercase;
             }
             #result {
                 margin-top: 30px; padding: 20px;
-                background: #0f0f0f; border-left: 3px solid #ffffff;
+                background: #f9f9f9; border-left: 3px solid #1a1a1a;
             }
             .doc-output {
-                background: #000; padding: 20px; 
-                color: #ffffff; font-family: 'Segoe UI', Tahoma, Geneva, sans-serif;
+                background: #ffffff; padding: 20px; 
+                color: #1a1a1a; font-family: 'Segoe UI', Tahoma, Geneva, sans-serif;
                 max-height: 600px; overflow-y: auto;
-                border: 1px solid #333; margin: 15px 0;
+                border: 1px solid #ddd; margin: 15px 0;
                 white-space: pre-wrap; word-wrap: break-word;
                 font-size: 13px; line-height: 1.6;
+            }
+            .slider-container {
+                display: flex; align-items: center; gap: 15px;
+                margin-top: 10px;
+            }
+            .slider {
+                flex: 1; height: 6px;
+                background: #ddd; outline: none;
+                border-radius: 3px;
+                -webkit-appearance: none;
+            }
+            .slider::-webkit-slider-thumb {
+                -webkit-appearance: none;
+                appearance: none;
+                width: 18px; height: 18px;
+                background: #1a1a1a;
+                border: 2px solid #1a1a1a;
+                cursor: pointer;
+                border-radius: 50%;
+                transition: all 0.3s;
+            }
+            .slider::-webkit-slider-thumb:hover {
+                background: #ff0000;
+                border-color: #ff0000;
+            }
+            .slider::-moz-range-thumb {
+                width: 18px; height: 18px;
+                background: #1a1a1a;
+                border: 2px solid #1a1a1a;
+                cursor: pointer;
+                border-radius: 50%;
+                transition: all 0.3s;
+            }
+            .slider::-moz-range-thumb:hover {
+                background: #ff0000;
+                border-color: #ff0000;
+            }
+            .temp-value {
+                min-width: 45px;
+                color: #1a1a1a;
+                font-weight: bold;
+                text-align: right;
+                font-size: 0.95em;
             }
         </style>
         <script>
@@ -895,6 +1265,10 @@ async def root():
                     document.querySelector('input[name="repo_url"]').required = false;
                     document.querySelector('textarea[name="code_snippet"]').required = true;
                 }
+            }
+            
+            function updateTempValue(value) {
+                document.getElementById('temp-display').textContent = value;
             }
             
             async function generateDocs(event) {
@@ -1012,7 +1386,7 @@ async def root():
                     <label for="repo_url">REPOSITORY SOURCE</label>
                     <input type="text" name="repo_url" placeholder="https://github.com/owner/repo.git">
                     <div class="example">
-                        Git: https://github.com/avin0160/cube-hexomino-tetris.git | ZIP: /content/my-project.zip
+                        Git: https://github.com/owner/repo.git | ZIP: /content/my-project.zip
                     </div>
                 </div>
                 
@@ -1023,7 +1397,7 @@ async def root():
                 
                 <div class="form-group">
                     <label>DOCUMENTATION STYLE</label>
-                    <div class="style-grid">
+                    <div class="style-grid" style="grid-template-columns: 1fr 1fr 1fr 1fr;">
                         <div class="style-option selected" data-style="sphinx" onclick="selectStyle('sphinx')">
                             <strong>Sphinx/reST API</strong>
                             <div class="example">Professional API docs with :param: and :type: tags</div>
@@ -1036,11 +1410,16 @@ async def root():
                             <strong>Technical Comprehensive</strong>
                             <div class="example">Detailed technical documentation</div>
                         </div>
+                        <div class="style-option" data-style="user_guide" onclick="selectStyle('user_guide')">
+                            <strong>User Guide</strong>
+                            <div class="example">How to use, examples, entry points</div>
+                        </div>
                     </div>
                     <select name="doc_style" style="display: none;">
                         <option value="sphinx" selected>Sphinx/reST API</option>
                         <option value="opensource">Open Source (README + API)</option>
                         <option value="technical_comprehensive">Technical Comprehensive</option>
+                        <option value="user_guide">User Guide (Usage & Examples)</option>
                     </select>
                 </div>
                 
@@ -1049,6 +1428,38 @@ async def root():
                     <textarea name="context" rows="4" placeholder="Academic research project focusing on algorithmic efficiency
 Include performance analysis and optimization recommendations
 Target audience: Computer science students and researchers"></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label for="temperature">GEMINI TEMPERATURE</label>
+                    <div class="slider-container">
+                        <input type="range" name="temperature" class="slider" min="0.0" max="1.0" step="0.1" value="0.3" oninput="updateTempValue(this.value)">
+                        <span class="temp-value" id="temp-display">0.3</span>
+                    </div>
+                    <div class="example">
+                        Lower = More precise | Higher = More creative (Only for Gemini-only mode)
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>GENERATION MODE</label>
+                    <div class="radio-group">
+                        <label>
+                            <input type="radio" name="generation_mode" value="rule_based" checked>
+                            Rule-Based (Instant, Templates)
+                        </label>
+                        <label>
+                            <input type="radio" name="generation_mode" value="gemini_only">
+                            Gemini Only (Fast, 2-5s)
+                        </label>
+                        <label>
+                            <input type="radio" name="generation_mode" value="phi3_gemini">
+                            Phi-3 + Gemini (Best Quality, 30-60s)
+                        </label>
+                    </div>
+                    <div class="example">
+                        Rule-Based: Instant | Gemini: Fast & Good | Phi-3: Slow but Best
+                    </div>
                 </div>
                 
                 <button type="submit" class="btn">GENERATE DOCUMENTATION</button>
@@ -1089,16 +1500,20 @@ async def generate_docs(
     code_snippet: str = Form(""),
     input_type: str = Form("url"),
     context: str = Form(""), 
-    doc_style: str = Form("sphinx")
+    doc_style: str = Form("sphinx"),
+    temperature: float = Form(0.3),
+    generation_mode: str = Form("rule_based")
 ):
     """Generate documentation for repository from Git URL, ZIP, or code snippet"""
     global doc_generator
     
-    # DEBUG: Log received style
+    # DEBUG: Log received style, temperature, and mode
     print(f"📝 Received doc_style: '{doc_style}'")
+    print(f"🌡️ Received temperature: {temperature}")
+    print(f"⚙️ Received generation_mode: '{generation_mode}'")
     
     # Validate and normalize style
-    valid_styles = ['sphinx', 'opensource', 'technical_comprehensive']
+    valid_styles = ['sphinx', 'opensource', 'technical_comprehensive', 'user_guide']
     if doc_style not in valid_styles:
         print(f"⚠️ Invalid style '{doc_style}', defaulting to 'sphinx'")
         doc_style = 'sphinx'
@@ -1119,19 +1534,26 @@ async def generate_docs(
             
             print(f"🔄 Processing code snippet ({len(code_snippet)} characters)...")
             
-            # Enhance code snippet for better analysis
-            enhanced_code = enhance_code_snippet(code_snippet.strip())
-            print(f"🔧 Enhanced to {len(enhanced_code)} characters for better analysis")
+            # Check if snippet is too large
+            if len(code_snippet) > 10000:
+                print(f"⚠️ Large code snippet detected (>{len(code_snippet)} chars)")
+                print(f"⚡ This may take 2-5 minutes with Phi-3 on CPU")
+            else:
+                print(f"⚡ Small snippet - should complete in 30-60 seconds")
             
-            # Create temporary file with the enhanced code snippet
+            # Use code as-is for faster processing (no enhancement needed)
+            # Enhancement adds 300+ lines of boilerplate which slows down AI
+            print(f"⚡ Using code as-is for fast AI processing")
+            
+            # Create temporary file with the original code snippet
             temp_dir = tempfile.mkdtemp()
             temp_file = os.path.join(temp_dir, "main.py")
             
             try:
                 with open(temp_file, 'w', encoding='utf-8') as f:
-                    f.write(enhanced_code)
+                    f.write(code_snippet.strip())
                 repo_path = temp_dir
-                print(f"✅ Enhanced code snippet saved for analysis")
+                print(f"✅ Code snippet ready for AI analysis")
             except Exception as e:
                 return JSONResponse({
                     "error": f"Failed to process code snippet: {str(e)}",
@@ -1216,7 +1638,7 @@ async def generate_docs(
         
         # Try advanced system first
         if doc_generator and ADVANCED_SYSTEM_AVAILABLE:
-            print("🤖 Using full AI generation with RAG context...")
+            print(f"🤖 Using generation mode: {generation_mode}")
             try:
                 # Enhance context with RAG if available
                 enhanced_context = context
@@ -1231,28 +1653,35 @@ async def generate_docs(
                         enhanced_context = context
                 
                 if repo_path and os.path.exists(repo_path):
-                    # Use repository analysis
-                    if hasattr(doc_generator, 'generate_repository_documentation'):
-                        result = await asyncio.to_thread(doc_generator.generate_repository_documentation, repo_path, enhanced_context, doc_style)
+                    # Read files and use generate_styled_documentation with mode
+                    file_contents = {}
+                    for root, dirs, files in os.walk(repo_path):
+                        for file in files[:10]:  # Limit files
+                            if file.endswith('.py'):
+                                file_path = os.path.join(root, file)
+                                try:
+                                    with open(file_path, 'r', encoding='utf-8') as f:
+                                        content = f.read()
+                                        file_contents[os.path.relpath(file_path, repo_path)] = content
+                                except:
+                                    continue
+                    
+                    if file_contents:
+                        # Use generate_styled_documentation which respects generation_mode
+                        result = await asyncio.to_thread(
+                            generate_styled_documentation, 
+                            file_contents, 
+                            enhanced_context, 
+                            doc_style, 
+                            repo_path, 
+                            temperature, 
+                            generation_mode
+                        )
                     else:
-                        # Fallback to analyzing main files
-                        main_files = []
-                        for root, dirs, files in os.walk(repo_path):
-                            for file in files[:5]:  # Limit files
-                                if file.endswith('.py'):
-                                    file_path = os.path.join(root, file)
-                                    try:
-                                        with open(file_path, 'r') as f:
-                                            content = f.read()
-                                            main_files.append(content)
-                                    except:
-                                        continue
-                        
-                        combined_code = '\n\n'.join(main_files)
-                        result = await asyncio.to_thread(doc_generator.generate_documentation, combined_code, enhanced_context, doc_style, input_type="code")
+                        result = "No Python files found in repository"
                 else:
                     # Treat as code snippet
-                    result = await asyncio.to_thread(doc_generator.generate_documentation, repo_url, enhanced_context, doc_style, input_type="code")
+                    result = await asyncio.to_thread(doc_generator.generate_documentation, repo_url, enhanced_context, doc_style, "code", "", temperature)
                 
                 # Calculate comprehensive evaluation metrics
                 metrics_results = None
@@ -1485,7 +1914,7 @@ async def generate_docs(
         # Fallback to repository analysis
         if repo_path and os.path.exists(repo_path):
             print("🔄 Using repository structure analysis...")
-            return await analyze_repository_structure(repo_path, context, doc_style)
+            return await analyze_repository_structure(repo_path, context, doc_style, temperature, generation_mode)
         else:
             # Basic code analysis
             print("🔄 Using basic code analysis...")

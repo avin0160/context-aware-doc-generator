@@ -28,15 +28,13 @@ class Phi3DocumentationGenerator:
     - Phi-3: Backbone - generates initial documentation from local context
     - Gemini: Context validator - enhances with full project awareness
     - Fast-fail: If Phi-3 fails, switches to Gemini-only mode for speed
-    - Gemini-only: On CPU, skip Phi-3 entirely for better performance
     """
     
-    def __init__(self, model_name: str = "microsoft/Phi-3-mini-4k-instruct", gemini_only: bool = False):
+    def __init__(self, model_name: str = "microsoft/Phi-3-mini-4k-instruct"):
         """Initialize Phi-3 model and Gemini enhancer
         
         Args:
             model_name: HuggingFace model identifier
-            gemini_only: If True, skip Phi-3 and use only Gemini API (faster on CPU)
         """
         self.model = None
         self.tokenizer = None
@@ -46,18 +44,10 @@ class Phi3DocumentationGenerator:
         self.project_context = None  # Store full project context for Gemini
         self.phi3_failed = False  # Fast-fail flag: skip Phi-3 after first failure
         self.phi3_failure_count = 0  # Track failures
-        self.gemini_only = gemini_only  # Skip Phi-3 entirely if True
+        self.temperature = 0.3  # Default temperature for generation
         
-        # Auto-enable gemini_only on CPU (Phi-3 is too slow)
-        if self.device == "cpu" and not gemini_only:
-            logger.info("⚡ CPU detected: Enabling Gemini-only mode for faster documentation")
-            self.gemini_only = True
-        
-        # Only load Phi-3 if not in gemini_only mode
-        if not self.gemini_only:
-            self._initialize_model()
-        else:
-            logger.info("🚀 Gemini-only mode: Skipping Phi-3 model loading for speed")
+        # Initialize Phi-3
+        self._initialize_model()
         
         # Initialize Gemini enhancer
         if GEMINI_AVAILABLE:
@@ -77,6 +67,15 @@ class Phi3DocumentationGenerator:
         if self.gemini_enhancer and self.gemini_enhancer.available:
             self.project_context = self.gemini_enhancer.build_project_context(analysis)
             logger.info("✅ Project context prepared for Gemini")
+    
+    def set_temperature(self, temperature: float):
+        """Set generation temperature
+        
+        Args:
+            temperature: Temperature value between 0.0 and 1.0
+        """
+        self.temperature = max(0.0, min(1.0, temperature))
+        logger.info(f"🌡️ Temperature set to: {self.temperature}")
     
     def _initialize_model(self):
         """Lazy load model to save memory"""
@@ -132,7 +131,7 @@ class Phi3DocumentationGenerator:
         """
         return {
             "max_new_tokens": 512,
-            "temperature": 0.3,
+            "temperature": self.temperature,
             "top_p": 0.9,
             "do_sample": True,
             "pad_token_id": self.tokenizer.eos_token_id
@@ -162,11 +161,6 @@ class Phi3DocumentationGenerator:
         """
         if not self.model:
             return self._fallback_docstring(function_name, context)
-        
-        # Gemini-only mode: Skip Phi-3 entirely (faster on CPU)
-        if self.gemini_only and self.gemini_enhancer and self.gemini_enhancer.available:
-            logger.info(f"⚡ Gemini-only mode: Generating docs for {function_name}")
-            return self._generate_with_gemini(function_code, function_name, context, style)
         
         # Fast-fail: Skip Phi-3 if it failed before (use Gemini directly)
         if self.phi3_failed and self.gemini_enhancer and self.gemini_enhancer.available:
