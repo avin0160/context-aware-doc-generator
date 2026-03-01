@@ -39,13 +39,14 @@ SphinxEvaluator = None
 ComprehensiveEvaluator = None
 compute_codesearchnet_metrics = None
 get_codesearchnet_reference_corpus = None
+evaluate_documentation_quality = None  # Real quality metrics (no reference needed)
 
 print("✅ Fast startup mode: Heavy modules will load on demand")
 print("⚡ Choose 'Gemini-only' mode for instant documentation without Phi-3")
 
 def lazy_load_metrics_only():
     """Load just the metrics modules (lightweight, no Phi-3)"""
-    global CODESEARCHNET_AVAILABLE, SphinxEvaluator, ComprehensiveEvaluator, compute_codesearchnet_metrics, get_codesearchnet_reference_corpus
+    global CODESEARCHNET_AVAILABLE, SphinxEvaluator, ComprehensiveEvaluator, compute_codesearchnet_metrics, get_codesearchnet_reference_corpus, evaluate_documentation_quality
     
     if CODESEARCHNET_AVAILABLE:
         return  # Already loaded
@@ -55,51 +56,32 @@ def lazy_load_metrics_only():
         from evaluation_metrics import ComprehensiveEvaluator as CompEval
         from sphinx_compliance_metrics import DocumentationEvaluator as SphinxEval
         from gemini_context_enhancer import compute_codesearchnet_metrics as csn_metrics_func, get_codesearchnet_reference_corpus as csn_corpus_func
+        from real_quality_metrics import evaluate_documentation_quality as real_metrics_func
         
         SphinxEvaluator = SphinxEval
         ComprehensiveEvaluator = CompEval
         compute_codesearchnet_metrics = csn_metrics_func
         get_codesearchnet_reference_corpus = csn_corpus_func
+        evaluate_documentation_quality = real_metrics_func
         
         CODESEARCHNET_AVAILABLE = True
-        print("✅ Metrics modules loaded (BLEU_eq, METEOR_eq, ROUGE_eq available)")
+        print("✅ Metrics modules loaded (Real quality metrics + heuristic scores)")
     except Exception as e:
         print(f"⚠️ Could not load metrics modules: {e}")
 
-def lazy_load_advanced_system():
-    """Load the heavy documentation system only when requested"""
-    global doc_generator, rag_system, ADVANCED_SYSTEM_AVAILABLE, CODESEARCHNET_AVAILABLE
-    global SphinxEvaluator, ComprehensiveEvaluator, compute_codesearchnet_metrics, get_codesearchnet_reference_corpus
+
+def lazy_load_rag_system():
+    """Load RAG system independently (works with Gemini-only mode too)"""
+    global rag_system
     
-    if doc_generator is not None:
+    if rag_system is not None:
         return  # Already loaded
     
-    print("\n⏳ Loading advanced documentation system (this may take 1-2 minutes)...")
     try:
-        from comprehensive_docs_advanced import DocumentationGenerator
-        from evaluation_metrics import BLEUScore, ROUGEScore, METEORScore, CodeBLEU, ComprehensiveEvaluator as CompEval
-        from sphinx_compliance_metrics import DocumentationEvaluator as SphinxEval
-        from technical_doc_metrics import TechnicalDocumentationEvaluator
-        from src.rag import CodeRAGSystem
-        from gemini_context_enhancer import compute_codesearchnet_metrics as csn_metrics_func, get_codesearchnet_reference_corpus as csn_corpus_func
-        
-        # Make available globally
-        SphinxEvaluator = SphinxEval
-        ComprehensiveEvaluator = CompEval
-        compute_codesearchnet_metrics = csn_metrics_func
-        get_codesearchnet_reference_corpus = csn_corpus_func
-        
-        CODESEARCHNET_AVAILABLE = True
-        ADVANCED_SYSTEM_AVAILABLE = True
-        print("✅ Advanced system modules imported")
-        
-        # Initialize DocumentationGenerator (loads Phi-3)
-        print("⏳ Loading Phi-3 model (1-2 minutes)...")
-        doc_generator = DocumentationGenerator()
-        print("✅ Phi-3 model loaded!")
-        
-        # Try RAG with increased timeout (120 seconds for embedding model)
+        print("🔍 Loading RAG system for semantic code search...")
         import threading, queue
+        from src.rag import CodeRAGSystem
+        
         result_queue = queue.Queue()
         def rag_loader():
             try:
@@ -110,17 +92,57 @@ def lazy_load_advanced_system():
         rag_thread = threading.Thread(target=rag_loader)
         rag_thread.daemon = True
         rag_thread.start()
-        rag_thread.join(timeout=120)  # Increased to 120 seconds for embedding model load
+        rag_thread.join(timeout=60)  # 60 seconds for embedding model
         
         if not rag_thread.is_alive():
             result = result_queue.get_nowait()
             if not isinstance(result, Exception):
                 rag_system = result
-                print("✅ RAG system loaded and ready")
+                print("✅ RAG system loaded (FAISS + sentence-transformers)")
             else:
                 print(f"⚠️ RAG system failed to load: {result}")
         else:
-            print("⚠️ RAG system load timed out (>120s)")
+            print("⚠️ RAG system load timed out (>60s)")
+            
+    except Exception as e:
+        print(f"⚠️ RAG system not available: {e}")
+
+
+def lazy_load_advanced_system():
+    """Load the heavy documentation system only when requested"""
+    global doc_generator, rag_system, ADVANCED_SYSTEM_AVAILABLE, CODESEARCHNET_AVAILABLE
+    global SphinxEvaluator, ComprehensiveEvaluator, compute_codesearchnet_metrics, get_codesearchnet_reference_corpus, evaluate_documentation_quality
+    
+    if doc_generator is not None:
+        return  # Already loaded
+    
+    print("\n⏳ Loading advanced documentation system (this may take 1-2 minutes)...")
+    try:
+        from comprehensive_docs_advanced import DocumentationGenerator
+        from evaluation_metrics import BLEUScore, ROUGEScore, METEORScore, CodeBLEU, ComprehensiveEvaluator as CompEval
+        from sphinx_compliance_metrics import DocumentationEvaluator as SphinxEval
+        from technical_doc_metrics import TechnicalDocumentationEvaluator
+        from gemini_context_enhancer import compute_codesearchnet_metrics as csn_metrics_func, get_codesearchnet_reference_corpus as csn_corpus_func
+        from real_quality_metrics import evaluate_documentation_quality as real_metrics_func
+        
+        # Make available globally
+        SphinxEvaluator = SphinxEval
+        ComprehensiveEvaluator = CompEval
+        compute_codesearchnet_metrics = csn_metrics_func
+        get_codesearchnet_reference_corpus = csn_corpus_func
+        evaluate_documentation_quality = real_metrics_func
+        
+        CODESEARCHNET_AVAILABLE = True
+        ADVANCED_SYSTEM_AVAILABLE = True
+        print("✅ Advanced system modules imported")
+        
+        # Initialize DocumentationGenerator (loads Phi-3)
+        print("⏳ Loading Phi-3 model (1-2 minutes)...")
+        doc_generator = DocumentationGenerator()
+        print("✅ Phi-3 model loaded!")
+        
+        # Load RAG system using the shared function
+        lazy_load_rag_system()
         
     except Exception as e:
         print(f"❌ Failed to load advanced system: {e}")
@@ -137,23 +159,60 @@ app.add_middleware(
     allow_headers=["*"],  # Allow all headers
 )
 
-def install_fastapi_deps():
-    """Install FastAPI dependencies"""
-    try:
-        import fastapi
-        import uvicorn
-        print("✅ FastAPI dependencies already installed")
-        return True
-    except ImportError:
-        print("📦 Installing FastAPI dependencies...")
+def install_all_requirements():
+    """Install ALL required dependencies from requirements.txt and ensure models are ready"""
+    import os
+    
+    print("\n📦 Checking and installing all requirements...")
+    
+    # Core packages to check/install
+    required_packages = {
+        'fastapi': 'fastapi',
+        'uvicorn': 'uvicorn[standard]',
+        'jinja2': 'jinja2',
+        'python-multipart': 'python-multipart',
+        'transformers': 'transformers>=4.41.0',
+        'torch': 'torch',
+        'sentence_transformers': 'sentence-transformers',
+        'faiss': 'faiss-cpu',
+        'google.generativeai': 'google-generativeai',
+        'bert_score': 'bert-score',
+        'gitpython': 'gitpython',
+        'requests': 'requests',
+    }
+    
+    missing_packages = []
+    for module, package in required_packages.items():
         try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", 
-                                 "fastapi", "uvicorn[standard]", "jinja2", "python-multipart"])
-            print("✅ FastAPI dependencies installed successfully")
-            return True
+            __import__(module.split('.')[0])
+        except ImportError:
+            missing_packages.append(package)
+    
+    if missing_packages:
+        print(f"📥 Installing {len(missing_packages)} missing packages: {', '.join(missing_packages)}")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet"] + missing_packages)
+            print("✅ All packages installed successfully")
         except subprocess.CalledProcessError as e:
-            print(f"❌ Failed to install FastAPI dependencies: {e}")
-            return False
+            print(f"⚠️ Some packages failed to install: {e}")
+            print("   Try running: pip install -r requirements.txt")
+    else:
+        print("✅ All required packages already installed")
+    
+    # Check if requirements.txt exists and install from it
+    req_file = os.path.join(os.path.dirname(__file__), 'requirements.txt')
+    if os.path.exists(req_file):
+        print("📋 Verifying requirements.txt dependencies...")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "-r", req_file])
+        except:
+            pass  # Silent fail - already handled core packages
+    
+    return True
+
+def install_fastapi_deps():
+    """Install FastAPI dependencies (legacy function, now calls install_all_requirements)"""
+    return install_all_requirements()
 
 def install_ngrok():
     """Install pyngrok for tunneling"""
@@ -205,6 +264,151 @@ def create_tunnel(port=8000):
         print("[TIP] If error persists, manually run: pkill ngrok (Linux/Mac) or taskkill /F /IM ngrok.exe (Windows)")
         return None
 
+
+def build_rag_index_from_files(file_contents: dict, repo_path: str = None):
+    """
+    Build FAISS index from file contents for RAG retrieval.
+    
+    This enables semantic search over the codebase to:
+    1. Find related functions/classes when documenting
+    2. Provide context about similar code patterns
+    3. Improve documentation quality with relevant examples
+    
+    Args:
+        file_contents: Dict mapping file paths to content
+        repo_path: Optional repository root path
+        
+    Returns:
+        bool: True if index built successfully
+    """
+    global rag_system
+    
+    if not rag_system:
+        print("⚠️ RAG system not loaded, skipping index build")
+        return False
+    
+    try:
+        import ast
+        print(f"🔨 Building FAISS index from {len(file_contents)} files...")
+        
+        # Convert file_contents to the format expected by RAG system
+        # Structure: {'files': {path: {functions: [], classes: [], ...}}}
+        parsed_codebase = {'files': {}}
+        
+        for file_path, content in file_contents.items():
+            file_data = {
+                'file_path': file_path,
+                'language': 'python' if file_path.endswith('.py') else 
+                           'javascript' if file_path.endswith(('.js', '.ts')) else
+                           'java' if file_path.endswith('.java') else
+                           'cpp' if file_path.endswith(('.cpp', '.c', '.h')) else
+                           'unknown',
+                'functions': [],
+                'classes': [],
+                'imports': []
+            }
+            
+            # Parse Python files with AST for accurate extraction
+            if file_path.endswith('.py'):
+                try:
+                    tree = ast.parse(content)
+                    lines = content.split('\n')
+                    
+                    for node in ast.walk(tree):
+                        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                            # Get function code
+                            start = node.lineno - 1
+                            end = node.end_lineno if hasattr(node, 'end_lineno') else start + 10
+                            func_text = '\n'.join(lines[start:end])
+                            
+                            file_data['functions'].append({
+                                'name': node.name,
+                                'text': func_text,
+                                'start_line': node.lineno,
+                                'end_line': end
+                            })
+                        elif isinstance(node, ast.ClassDef):
+                            start = node.lineno - 1
+                            end = node.end_lineno if hasattr(node, 'end_lineno') else start + 20
+                            class_text = '\n'.join(lines[start:end])
+                            
+                            file_data['classes'].append({
+                                'name': node.name,
+                                'text': class_text,
+                                'start_line': node.lineno,
+                                'end_line': end
+                            })
+                        elif isinstance(node, ast.Import):
+                            for alias in node.names:
+                                file_data['imports'].append(alias.name)
+                        elif isinstance(node, ast.ImportFrom):
+                            if node.module:
+                                file_data['imports'].append(node.module)
+                except SyntaxError:
+                    # Fallback: add file as single chunk
+                    file_data['functions'].append({
+                        'name': os.path.basename(file_path),
+                        'text': content[:2000],
+                        'start_line': 1,
+                        'end_line': len(content.split('\n'))
+                    })
+            else:
+                # Non-Python: add file as single chunk for now
+                file_data['functions'].append({
+                    'name': os.path.basename(file_path),
+                    'text': content[:2000],
+                    'start_line': 1,
+                    'end_line': len(content.split('\n'))
+                })
+            
+            parsed_codebase['files'][file_path] = file_data
+        
+        # Build the FAISS index
+        code_chunks = rag_system.prepare_code_chunks(parsed_codebase)
+        print(f"📦 Prepared {len(code_chunks)} code chunks for indexing")
+        
+        rag_system.build_index(code_chunks)
+        print(f"✅ FAISS index built with {len(code_chunks)} vectors")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Failed to build RAG index: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def get_rag_context_for_code(code_snippet: str, code_type: str = "function") -> str:
+    """
+    Get relevant context from FAISS index for documenting a piece of code.
+    
+    This improves documentation quality by providing:
+    1. Related functions/classes that do similar things
+    2. Documentation patterns from the codebase
+    3. Context about how this code fits in the project
+    
+    Args:
+        code_snippet: The code to get context for
+        code_type: Type of code (function, class, file)
+        
+    Returns:
+        str: Context string to include in LLM prompt
+    """
+    global rag_system
+    
+    if not rag_system or not rag_system.is_trained:
+        return ""
+    
+    try:
+        # Use the RAG system's built-in method
+        context = rag_system.get_context_for_documentation(code_snippet, code_type)
+        return context
+    except Exception as e:
+        print(f"⚠️ RAG context retrieval failed: {e}")
+        return ""
+
+
 # DISABLED: Causes double initialization of Phi-3 (takes ~1 minute extra)
 # Already initialized at module import time (lines 30-66)
 # Uncomment only if you need lazy loading
@@ -230,7 +434,7 @@ async def startup_event():
         doc_generator = None
 """
 
-async def analyze_repository_structure(repo_path: str, context: str, doc_style: str, temperature: float = 0.3, generation_mode: str = "rule_based"):
+async def analyze_repository_structure(repo_path: str, context: str, doc_style: str, temperature: float = 0.3, generation_mode: str = "gemini_only"):
     """Analyze repository structure and generate documentation"""
     try:
         import os
@@ -274,15 +478,20 @@ async def analyze_repository_structure(repo_path: str, context: str, doc_style: 
         print("\n📊 Calculating quality metrics...")
         metrics = calculate_comprehensive_metrics(doc, context)
         
-        print(f"  ✅ BLEU_eq: {metrics['bleu']}")
-        print(f"  ✅ METEOR_eq: {metrics['meteor']}")
-        print(f"  ✅ ROUGE_eq: {metrics['rouge_l']}")
+        print(f"  ✅ Completeness: {metrics.get('completeness', 'N/A')}")
+        print(f"  ✅ Consistency: {metrics.get('consistency', 'N/A')}")
+        print(f"  ✅ Readability: {metrics.get('readability_score', 'N/A')}")
+        print(f"  ✅ Flesch Grade: {metrics.get('flesch_kincaid_grade', 'N/A')}")
+        if metrics.get('bert_score') and metrics.get('bert_score') != 'N/A':
+            print(f"  ✅ BERTScore: {metrics.get('bert_score')}")
         print(f"  ✅ Overall: {metrics['overall']}")
+        if 'methodology' in metrics:
+            print(f"  📚 Method: {metrics['methodology']}")
         
         return JSONResponse({
             "documentation": doc,
             "status": f"✅ Generated via comprehensive repository analysis ({len(file_contents)} files, {total_lines:,} lines)",
-            "method": generation_mode if generation_mode != "rule_based" else "structure analysis + AI metrics",
+            "method": generation_mode,
             "style": doc_style,
             "files_analyzed": len(file_contents),
             "total_lines": total_lines,
@@ -615,16 +824,57 @@ if __name__ == "__main__":
 '''
     return enhanced_code
 
-def generate_styled_documentation(file_contents: dict, context: str, doc_style: str, repo_path: str, temperature: float = 0.3, generation_mode: str = "rule_based"):
+def generate_styled_documentation(file_contents: dict, context: str, doc_style: str, repo_path: str, temperature: float = 0.3, generation_mode: str = "gemini_only"):
     """Generate comprehensive documentation using the FIXED generator with enhanced code processing"""
     
     # Count total functions to estimate processing time
     total_content_size = sum(len(content) for content in file_contents.values())
     file_count = len(file_contents)
     
-    # Force rule-based mode if explicitly selected
-    if generation_mode == "rule_based":
-        print(f"⚡ RULE-BASED MODE: Using template generation (instant)")
+    # === RAG INTEGRATION: Build FAISS index for semantic retrieval ===
+    # This enables context-aware documentation by finding related code
+    if rag_system and not rag_system.is_trained:
+        print("🔍 RAG: Building semantic index for context-aware documentation...")
+        build_rag_index_from_files(file_contents, repo_path)
+    elif rag_system and rag_system.is_trained:
+        print("✅ RAG: Using existing FAISS index")
+    
+    # Phi-3 Only mode - use local Phi-3 model without Gemini
+    if generation_mode == "phi3_only":
+        print(f"🧠 PHI-3 ONLY MODE: Using local Microsoft Phi-3 model (no cloud API)")
+        lazy_load_advanced_system()
+        
+        if doc_generator:
+            try:
+                combined_content = ""
+                for file_path, content in file_contents.items():
+                    combined_content += f"# File: {file_path}\n{content[:3000]}\n\n"
+                
+                # Generate with Phi-3 only
+                phi3_prompt = f"""Generate comprehensive technical documentation for this codebase.
+
+Context: {context or 'Technical documentation'}
+Style: {doc_style}
+
+Code to document:
+{combined_content[:12000]}
+
+Generate detailed documentation including:
+1. Overview and purpose
+2. All classes and functions with descriptions
+3. Parameters and return values
+4. Usage examples
+5. Configuration options
+"""
+                result = doc_generator.generate_documentation(phi3_prompt)
+                if result and len(result) > 100:
+                    print(f"✅ PHI-3 ONLY: Generated {len(result)} characters")
+                    return result
+            except Exception as e:
+                print(f"⚠️ Phi-3 only mode failed: {e}")
+        
+        # Fallback to basic analysis if Phi-3 fails
+        print("⚠️ Phi-3 not available, using basic analysis")
         return generate_basic_repository_analysis(file_contents, context, doc_style, repo_path)
     
     # For AI modes (Gemini or Phi-3), process all files comprehensively
@@ -637,6 +887,16 @@ def generate_styled_documentation(file_contents: dict, context: str, doc_style: 
         
         # Load metrics modules (lightweight, no Phi-3 needed)
         lazy_load_metrics_only()
+        
+        # Load RAG system for semantic code search (independent of Phi-3)
+        lazy_load_rag_system()
+        
+        # Build FAISS index if RAG loaded but not trained yet
+        if rag_system and not rag_system.is_trained:
+            print("🔨 Building FAISS index for semantic code retrieval...")
+            build_rag_index_from_files(file_contents, repo_path)
+        elif rag_system and rag_system.is_trained:
+            print("✅ RAG: Using existing FAISS index")
         
         try:
             # Direct Gemini path - skip all heavyweight modules
@@ -655,130 +915,277 @@ def generate_styled_documentation(file_contents: dict, context: str, doc_style: 
                 # Include substantial content from each file (up to 5000 chars for better context)
                 combined_content += f"# File: {file_path}\n{content[:5000]}\n\n"
             
+            # === RAG ENHANCEMENT: Get relevant context for better documentation ===
+            rag_context_section = ""
+            if rag_system and rag_system.is_trained:
+                # Query RAG for relevant code patterns related to the project's main functionality
+                main_query = combined_content[:1000]  # Use first 1000 chars as query
+                rag_results = rag_system.search(main_query, k=3)
+                if rag_results:
+                    relevant_contexts = []
+                    for r in rag_results:
+                        if r['score'] > 0.25:  # Only include relevant matches
+                            chunk = r['chunk']
+                            relevant_contexts.append(
+                                f"[{chunk['type'].upper()}] {chunk['metadata'].get('name', 'Unknown')} "
+                                f"(similarity: {r['score']:.2f})\n{chunk['content'][:300]}..."
+                            )
+                    if relevant_contexts:
+                        rag_context_section = f"""
+
+[RAG-RETRIEVED RELATED CODE CONTEXT]
+The following related code elements provide context for documentation:
+{''.join(relevant_contexts[:3])}
+Use this context to ensure consistent documentation style and accurate descriptions.
+"""
+                        print(f"📚 RAG: Injected {len(relevant_contexts)} related code contexts into prompt")
+            
             # Build style-specific prompts
             if doc_style == 'technical_comprehensive':
-                prompt = f"""You are a technical documentation expert. Generate well-structured, user-friendly technical documentation.
+                prompt = f"""You are writing the ULTIMATE technical reference documentation - like official Python docs, Django docs, or React documentation. Write ACTUAL CONTENT with full paragraphs, not just section headings.
 
-STYLE: Technical Guide (structured like document 3)
-- Clear, accessible language (not overly technical)
-- Well-organized sections with clear headings
-- Balance depth with readability
-- Practical examples and usage patterns
-- Focus on HOW TO USE, not just theory
+CRITICAL: Write REAL DOCUMENTATION CONTENT. Each section must have multiple paragraphs of actual text explaining concepts, not just bullet points or headings. This should read like professional documentation from major open source projects.
 
 Context: {context or 'Technical documentation'}
-
+{rag_context_section}
 Repository: {os.path.basename(repo_path) if repo_path else 'repository'} ({len(file_contents)} files, {sum(len(c.split('\\n')) for c in file_contents.values())} lines)
 
-Code samples:
-{combined_content[:15000]}
+Source Code to Document:
+{combined_content[:18000]}
 
-Generate documentation with these sections:
+Write comprehensive technical documentation following this structure. FOR EACH SECTION, write several paragraphs of detailed explanatory text:
 
-## 1. Overview and Purpose
-- What this project does (2-3 sentences)
-- Target audience and use cases  
-- Key features
+# Project Name: Technical Reference Documentation
 
-## 2. Key Components and Classes
-- Main classes/modules with descriptions
-- Purpose and role of each component
-- How components interact
+## Introduction
 
-## 3. Function Descriptions with Signatures
-- Core functions with their signatures
-- Parameters and return values
-- Brief usage notes
+Write 3-4 paragraphs introducing the project: what problem it solves, why it exists, what makes it unique, and who should use it. Explain the core philosophy and design principles.
 
-## 4. Usage Examples
-- Installation steps
-- Basic usage examples with code
-- Common use cases with working examples
-- Advanced patterns
+## Architecture Overview
 
-## 5. Configuration Options and Setup
-- Installation/setup instructions
-- Configuration file structure
-- Environment variables
-- Command-line options
+Write detailed paragraphs explaining the system architecture. Describe how components interact, the data flow through the system, and the design decisions made. Include explanations of patterns used.
 
-TONE: Professional but approachable, like a good technical manual."""
+## Installation and Setup
+
+Write step-by-step installation instructions with full explanations. Cover all prerequisites, installation commands with explanations of what each does, verification steps, and post-installation configuration.
+
+## Core Concepts
+
+For each major concept in the codebase, write a dedicated subsection with:
+- A clear explanation of what it is and why it matters
+- How it fits into the overall system
+- Detailed examples showing usage
+
+## API Reference
+
+For EACH class and function found in the code, write:
+- A description paragraph explaining its purpose
+- The complete function signature
+- Parameter descriptions with types and valid values
+- Return value description
+- Usage example with code block
+- Notes on edge cases or common mistakes
+
+## Configuration Guide
+
+Document every configuration option with:
+- What the option controls
+- The default value and why
+- Valid values and their effects
+- Example configurations for common scenarios
+
+## Usage Examples and Tutorials
+
+Write multiple complete tutorials:
+- A "Getting Started" tutorial for beginners
+- An intermediate tutorial showing common workflows
+- Advanced examples demonstrating full capabilities
+Include complete, runnable code examples with detailed explanations of each step.
+
+## Troubleshooting and FAQ
+
+Document common issues with:
+- Problem description
+- Root cause explanation
+- Step-by-step solution
+- Prevention tips
+
+WRITING STYLE: Write in clear, professional prose. Each section should have substantial paragraphs of text, not just lists. Explain the "why" behind things, not just the "what". Be thorough and assume the reader wants to deeply understand the system."""
             
             elif doc_style == 'user_guide':
-                prompt = f"""You are creating an instruction manual and user guide with visual diagrams. Generate comprehensive, easy-to-follow documentation.
+                prompt = f"""You are writing a BEGINNER-FRIENDLY user guide that even someone new to programming can understand. Write in simple, clear language with lots of visual diagrams and step-by-step examples.
 
-IMPORTANT: Include Mermaid state diagrams showing:
-1. System workflow/state transitions
-2. Data flow architecture
-3. Component interaction diagrams
-
-STYLE: User Manual with Visual Elements
-- Step-by-step instructions
-- Include state flow descriptions for Mermaid diagrams
-- Usage examples for every feature
-- Troubleshooting guide
-- Clear, non-technical language
+CRITICAL: 
+1. Use SIMPLE language - explain technical terms when you use them
+2. Include MULTIPLE Mermaid diagrams showing how things flow
+3. Write ACTUAL explanatory paragraphs, not just bullet lists
+4. Include working code examples with line-by-line explanations
 
 Context: {context or 'User documentation'}
-
+{rag_context_section}
 Repository: {os.path.basename(repo_path) if repo_path else 'repository'} ({len(file_contents)} files)
 
-Code samples:
-{combined_content[:15000]}
+Source Code to Document:
+{combined_content[:18000]}
 
-Generate documentation with:
+Write a friendly, accessible user guide:
 
-## 1. Getting Started
-- What is this project?
-- Quick start guide
-- Installation steps
+# Welcome to [Project Name]
 
-## 2. System Architecture
-- Component overview
-- Data flow diagram description (for Mermaid):
-  ```mermaid
-  graph TD
-      A[Component] --> B[Another Component]
-      B --> C[Final Step]
-  ```
+## What is This Project?
 
-## 3. How to Use
-- Step-by-step usage guide
-- Common workflows
-- Example scenarios with code
+Write 2-3 paragraphs in simple language explaining what this project does. Use analogies to explain complex concepts. For example: "Think of this like a spell-checker, but for code documentation..."
 
-## 4. State Diagrams
-Describe the system states and transitions:
+## How It Works (Visual Overview)
+
+Explain the system flow with a Mermaid diagram:
+
 ```mermaid
-stateDiagram-v2
-    [*] --> Initialized
-    Initialized --> Processing
-    Processing --> Complete
-    Complete --> [*]
+flowchart TD
+    A[📥 You provide your code] --> B[🔍 System analyzes it]
+    B --> C[🤖 AI understands the code]
+    C --> D[📝 Documentation is generated]
+    D --> E[✅ You get beautiful docs!]
 ```
 
-## 5. Configuration
-- All available options
-- Configuration examples
-- Environment setup
+Write a paragraph explaining each step in the diagram in simple terms.
 
-## 6. Troubleshooting
-- Common issues and solutions
-- Error messages explained
-- FAQ
+## Getting Started - Your First Time
 
-TONE: Friendly and instructional, like a user manual."""
+Write step-by-step instructions like you're explaining to a friend:
+
+**Step 1: Installation**
+Explain what to do and WHY in simple terms...
+
+**Step 2: Running for the First Time**
+Walk through the process with screenshots/examples...
+
+## Understanding the System Flow
+
+Include a state diagram showing what happens:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Ready: Start the program
+    Ready --> Analyzing: Upload your code
+    Analyzing --> Processing: Code understood
+    Processing --> Generating: Creating docs
+    Generating --> Done: Success!
+    Done --> Ready: Generate more
+    Processing --> Error: Something went wrong
+    Error --> Ready: Try again
+```
+
+Explain each state in simple language.
+
+## Common Tasks - How Do I...?
+
+For each common task, write:
+- What you want to achieve
+- Step-by-step instructions with code examples
+- What to expect when it works
+- What to do if it doesn't work
+
+### Task: Generate Documentation for My Python Project
+
+Write complete walkthrough with example inputs and outputs...
+
+### Task: Customize the Output Style
+
+Explain options in simple terms...
+
+## Troubleshooting - When Things Go Wrong
+
+For each common problem:
+- **What you see**: Describe the error message
+- **What it means**: Explain in simple terms
+- **How to fix it**: Step-by-step solution
+
+## Quick Reference Card
+
+A simple summary of the most important commands and options.
+
+WRITING STYLE: Write like you're teaching a friend. Use "you" and "your". Explain jargon. Include lots of examples. Make it feel approachable and not intimidating."""
             
-            else:
-                prompt = f"""Generate {doc_style} style documentation.
+            else:  # opensource style
+                prompt = f"""You are writing an OPEN SOURCE contribution guide focused on: how to troubleshoot issues, how to contribute, and where the project needs more expertise/help.
 
 Context: {context}
+{rag_context_section}
 Repository: {os.path.basename(repo_path) if repo_path else 'repository'}
 
-Code:
-{combined_content[:15000]}
+Source Code:
+{combined_content[:18000]}
 
-Include: overview, components, usage examples, configuration."""
+Write a contributor-focused README:
+
+# Project Name
+
+Brief 2-sentence description of what this project does.
+
+## Quick Start
+
+Minimal instructions to get the project running (5-6 steps max).
+
+## Troubleshooting Guide
+
+### Common Issues and Solutions
+
+For each issue:
+
+**Issue: [Error message or problem]**
+- What causes this
+- How to fix it step by step
+- How to verify it's fixed
+
+### Debug Mode
+
+How to enable verbose logging and debug the system.
+
+## How to Contribute
+
+### Setting Up Development Environment
+
+Step-by-step dev setup instructions.
+
+### Code Structure Overview
+
+Brief explanation of where key functionality lives:
+- `file.py` - Does X
+- `module/` - Handles Y
+
+### Making Changes
+
+1. Fork and clone
+2. Create branch
+3. Make changes
+4. Run tests
+5. Submit PR
+
+### Coding Standards
+
+Brief guidelines for code style.
+
+## Areas Needing Help
+
+List specific areas where contributors with expertise are needed:
+
+### 🔴 High Priority
+- [Specific feature/bug that needs work]
+- [Performance issue that needs expertise]
+
+### 🟡 Medium Priority  
+- [Nice-to-have improvements]
+- [Documentation gaps]
+
+### 🟢 Good First Issues
+- [Beginner-friendly tasks]
+
+## Contact and Community
+
+How to reach maintainers, chat channels, etc.
+
+KEEP IT CONCISE but complete. This is for developers who want to contribute or debug issues."""
             
             print(f"📝 Calling Gemini API (temperature={temperature})...")
             response = gemini.client.models.generate_content(
@@ -902,55 +1309,45 @@ Include: overview, components, usage examples, configuration."""
                     for file_path, content in file_contents.items():
                         combined_content += f"# File: {file_path}\n{content[:5000]}\n\n"
                     
-                    prompt = f"""You are a technical documentation expert. Generate user-friendly, well-structured documentation for this code repository.
-
-IMPORTANT STYLE GUIDELINES:
-- Use clear, accessible language (not overly technical)
-- Organize with clear section headings
-- Balance thoroughness with readability
-- Include practical examples and usage patterns
-- Focus on HOW TO USE, not just WHAT IT IS
+                    prompt = f"""You are writing technical reference documentation. Write ACTUAL CONTENT with full paragraphs, not just section headings or bullet lists.
 
 Context: {context or 'Technical documentation'}
 
-Repository Details:
-- Name: {os.path.basename(repo_path) if repo_path else 'repository'} 
-- Files: {len(file_contents)}
-- Total lines: {sum(len(c.split('\\n')) for c in file_contents.values())}
+Repository: {os.path.basename(repo_path) if repo_path else 'repository'} ({len(file_contents)} files, {sum(len(c.split('\\n')) for c in file_contents.values())} lines)
 
-Code samples:
-{combined_content[:15000]}
+Source Code:
+{combined_content[:18000]}
 
-Generate documentation with these EXACT sections:
+Write comprehensive documentation with REAL CONTENT (paragraphs of explanatory text):
 
-## 1. Overview and Purpose
-- What this project does (2-3 sentences)
-- Target audience and use cases
-- Key value proposition
+# Technical Documentation
 
-## 2. Key Components and Classes
-- Main classes/modules with brief descriptions
-- Purpose and role of each component
-- How components interact
+## Introduction
+Write 2-3 paragraphs explaining what this project does, why it exists, and who should use it.
 
-## 3. Function Descriptions with Signatures
-- Core functions with their signatures
-- Parameters and return values
-- Brief usage notes for each
+## Architecture Overview  
+Write detailed paragraphs explaining how the system works, component interactions, and design decisions.
 
-## 4. Usage Examples
-- Installation steps (if applicable)
-- Basic usage examples with code
-- Common use cases with working examples
-- Advanced patterns (if relevant)
+## Installation
+Step-by-step installation with explanations of each command.
 
-## 5. Configuration Options and Setup
-- Installation/setup instructions
-- Configuration file structure
-- Environment variables or settings
-- Command-line options (if applicable)
+## API Reference
+For each class and function, write:
+- Description paragraph
+- Function signature
+- Parameter explanations
+- Usage example with code
 
-TONE: Professional but approachable, like explaining to a colleague. Avoid excessive jargon."""
+## Usage Examples
+Write complete tutorials with code examples and explanations.
+
+## Configuration
+Document all options with descriptions and examples.
+
+## Troubleshooting
+Common issues with solutions.
+
+Write substantial paragraphs for each section, not just lists or headings."""
                     
                     response = gemini.client.models.generate_content(
                         model=gemini.model_name,
@@ -992,59 +1389,298 @@ TONE: Professional but approachable, like explaining to a colleague. Avoid exces
         return generate_basic_repository_analysis(file_contents, context, doc_style, repo_path)
 
 def calculate_comprehensive_metrics(result: str, context: str) -> dict:
-    """Calculate comprehensive quality metrics for any documentation"""
+    """Calculate comprehensive quality metrics for documentation.
+    
+    Uses:
+    1. BLEU_eq, METEOR_eq, ROUGE_eq - Heuristic approximations of NLP metrics
+    2. Readability scores (Flesch-Kincaid, SMOG, Coleman-Liau, ARI)
+    3. BERTScore (if available) - semantic similarity
+    4. Overall score = weighted average of all metrics
+    
+    The _eq metrics are heuristic approximations that correlate with their
+    corresponding NLP metrics without requiring reference translations.
+    """
+    
     try:
-        # Calculate basic comprehensive metrics
-        word_count = len(result.split())
-        unique_words = len(set(result.lower().split()))
-        lexical_diversity = unique_words / max(word_count, 1)
+        # ========== BASIC TEXT STATISTICS ==========
+        words = result.split()
+        word_count = len(words)
+        unique_words = len(set(w.lower() for w in words))
         
+        # Sentence detection
         sentences = re.split(r'[.!?]+', result)
-        unique_sentences = len(set(s.strip().lower() for s in sentences if s.strip()))
-        total_sentences = len([s for s in sentences if s.strip()])
-        sentence_diversity = unique_sentences / max(total_sentences, 1)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        total_sentences = len(sentences)
+        unique_sentences = len(set(s.lower() for s in sentences))
         
-        # Check for important sections
+        # Syllable counting for readability metrics
+        def count_syllables(word):
+            word = word.lower()
+            if len(word) <= 3:
+                return 1
+            vowels = "aeiouy"
+            count = 0
+            prev_vowel = False
+            for char in word:
+                is_vowel = char in vowels
+                if is_vowel and not prev_vowel:
+                    count += 1
+                prev_vowel = is_vowel
+            if word.endswith('e'):
+                count -= 1
+            return max(count, 1)
+        
+        total_syllables = sum(count_syllables(w) for w in words)
+        
+        # Complex words (3+ syllables)
+        complex_words = sum(1 for w in words if count_syllables(w) >= 3)
+        
+        # Character count (for some readability formulas)
+        total_chars = sum(len(w) for w in words)
+        
+        avg_sentence_len = word_count / max(total_sentences, 1)
+        avg_syllables_per_word = total_syllables / max(word_count, 1)
+        
+        # ========== N-GRAM STATISTICS FOR BLEU/ROUGE HEURISTICS ==========
+        def get_ngrams(text_words, n):
+            return [tuple(text_words[i:i+n]) for i in range(len(text_words) - n + 1)]
+        
+        unigrams = get_ngrams(words, 1) if len(words) >= 1 else []
+        bigrams = get_ngrams(words, 2) if len(words) >= 2 else []
+        trigrams = get_ngrams(words, 3) if len(words) >= 3 else []
+        fourgrams = get_ngrams(words, 4) if len(words) >= 4 else []
+        
+        # Unique n-gram ratios (diversity)
+        unigram_diversity = len(set(unigrams)) / max(len(unigrams), 1)
+        bigram_diversity = len(set(bigrams)) / max(len(bigrams), 1)
+        trigram_diversity = len(set(trigrams)) / max(len(trigrams), 1)
+        fourgram_diversity = len(set(fourgrams)) / max(len(fourgrams), 1)
+        
+        # ========== BLEU_eq: N-gram Precision Heuristic ==========
+        # Approximates BLEU by measuring n-gram diversity and technical vocabulary coverage
+        # BLEU measures precision of n-grams against reference - we approximate with self-consistency
+        
+        # Technical terms presence (domain vocabulary)
+        tech_terms = ['function', 'class', 'method', 'parameter', 'return', 'value', 'type',
+                      'string', 'number', 'array', 'object', 'data', 'config', 'api', 'endpoint',
+                      'code', 'example', 'usage', 'documentation', 'module', 'import', 'export',
+                      'async', 'await', 'promise', 'callback', 'error', 'exception', 'handler']
+        tech_coverage = sum(1 for term in tech_terms if term in result.lower()) / len(tech_terms)
+        
+        # N-gram precision approximation (geometric mean like BLEU)
+        # With brevity penalty for too-short docs
+        brevity_penalty = min(1.0, word_count / 500)  # Penalty if < 500 words
+        
+        # BLEU_eq = geometric mean of n-gram diversities * tech coverage * brevity penalty
+        import math
+        epsilon = 0.01  # Smoothing
+        ngram_geo_mean = (
+            (unigram_diversity + epsilon) * 
+            (bigram_diversity + epsilon) * 
+            (trigram_diversity + epsilon) * 
+            (fourgram_diversity + epsilon)
+        ) ** 0.25
+        
+        bleu_eq = brevity_penalty * ngram_geo_mean * (0.5 + 0.5 * tech_coverage)
+        bleu_eq = min(1.0, max(0.0, bleu_eq * 1.2))  # Scale and clamp
+        
+        # ========== METEOR_eq: Term Matching + Synonymy Heuristic ==========
+        # METEOR considers exact matches, stems, synonyms, and paraphrases
+        # We approximate with lexical diversity, sentence variation, and semantic indicators
+        
+        # Exact term consistency (repeated terms used consistently)
+        term_frequency = {}
+        for w in words:
+            w_lower = w.lower()
+            term_frequency[w_lower] = term_frequency.get(w_lower, 0) + 1
+        
+        # High-frequency terms (concepts reinforced)
+        high_freq_terms = sum(1 for freq in term_frequency.values() if freq >= 3)
+        concept_reinforcement = min(1.0, high_freq_terms / 20)
+        
+        # Sentence structure variety (approximates paraphrase capability)
+        sentence_lengths = [len(s.split()) for s in sentences]
+        if sentence_lengths:
+            length_variance = sum((l - avg_sentence_len)**2 for l in sentence_lengths) / len(sentence_lengths)
+            structure_variety = min(1.0, (length_variance ** 0.5) / 10)
+        else:
+            structure_variety = 0.5
+        
+        # Semantic indicators (code blocks, references, headers)
+        code_blocks = len(re.findall(r'```[\s\S]*?```', result))
+        inline_code = len(re.findall(r'`[^`]+`', result))
+        headers = len(re.findall(r'^#{1,6}\s', result, re.MULTILINE))
+        
+        semantic_richness = min(1.0, (code_blocks * 0.1 + inline_code * 0.02 + headers * 0.05 + 0.3))
+        
+        # METEOR_eq = harmonic mean of components (like F-score)
+        lexical_div = unique_words / max(word_count, 1)
+        meteor_components = [lexical_div, concept_reinforcement, structure_variety, semantic_richness]
+        meteor_eq = sum(meteor_components) / len(meteor_components)
+        # Scale to reasonable range without excessive boost
+        meteor_eq = min(1.0, max(0.0, meteor_eq * 0.85 + 0.08))  # Reduced boost for realistic scores
+        
+        # ========== ROUGE_eq: Recall-Oriented Heuristic ==========
+        # ROUGE measures recall of n-grams from reference - we approximate with content coverage
+        
+        # Section coverage (comprehensive recall of documentation components)
         section_patterns = [
-            (r'(description|overview|summary)', 'Description'),
-            (r'(parameter|argument|arg)', 'Parameters'),
-            (r'(return|output)', 'Returns'),
-            (r'(example|usage|sample)', 'Examples'),
-            (r'(note|warning|important)', 'Notes'),
-            (r'(function|method|class|module)', 'Component Docs'),
+            (r'(description|overview|summary|introduction)', 'Description'),
+            (r'(parameter|argument|arg|param)', 'Parameters'),
+            (r'(return|output|result)', 'Returns'),
+            (r'(example|usage|sample|demo)', 'Examples'),
+            (r'(note|warning|important|tip)', 'Notes'),
+            (r'(function|method|class|module|component)', 'Component Docs'),
+            (r'(install|setup|configuration|config)', 'Setup'),
+            (r'(api|endpoint|interface|route)', 'API Docs'),
+            (r'(error|exception|handle|catch)', 'Error Handling'),
+            (r'(test|spec|assert|expect)', 'Testing'),
         ]
         sections_found = sum(1 for pattern, _ in section_patterns if re.search(pattern, result.lower()))
-        completeness = sections_found / len(section_patterns)
+        section_recall = sections_found / len(section_patterns)
         
-        # Calculate consistency (internal references)
-        defined_items = len(re.findall(r'(def |function |method |class )\w+', result.lower()))
-        referenced_items = len(re.findall(r'`\w+`|``\w+``', result))
-        consistency = min(1.0, 0.5 + (defined_items + referenced_items) / max(word_count / 100, 1))
+        # Content density (information per sentence)
+        avg_words_per_sentence = word_count / max(total_sentences, 1)
+        content_density = min(1.0, avg_words_per_sentence / 20)  # 20 words/sentence is dense
         
-        # Brevity
-        avg_sentence_len = word_count / max(total_sentences, 1)
-        if avg_sentence_len < 10:
-            brevity = 0.7
-        elif avg_sentence_len > 40:
+        # Longest common subsequence approximation (via unique sentence ratio)
+        sentence_coverage = unique_sentences / max(total_sentences, 1)
+        
+        # ROUGE_eq = weighted combination of recall components
+        rouge_eq = (section_recall * 0.4 + content_density * 0.3 + sentence_coverage * 0.3)
+        rouge_eq = min(1.0, max(0.0, rouge_eq * 1.1 + 0.2))  # Base boost + scale
+        
+        # ========== LEGACY HEURISTIC SCORES (for compatibility) ==========
+        lexical_diversity = unique_words / max(word_count, 1)
+        completeness = section_recall  # Reuse section coverage
+        
+        # Consistency (internal references and code blocks)
+        defined_items = len(re.findall(r'(def |function |method |class |interface )\w+', result.lower()))
+        referenced_items = len(re.findall(r'`[^`]+`', result))
+        consistency = min(1.0, 0.4 + (defined_items * 0.05 + referenced_items * 0.02 + code_blocks * 0.1))
+        
+        # Brevity (optimal sentence length is 15-25 words)
+        if avg_sentence_len < 8:
             brevity = 0.6
-        elif 15 <= avg_sentence_len <= 25:
+        elif avg_sentence_len > 35:
+            brevity = 0.5
+        elif 12 <= avg_sentence_len <= 25:
             brevity = 1.0
+        elif avg_sentence_len < 12:
+            brevity = 0.8
         else:
-            brevity = 0.85
+            brevity = 0.75
         
-        # Simulate BLEU, METEOR, ROUGE-L scores
-        bleu_score = (completeness * 0.4 + lexical_diversity * 0.3 + sentence_diversity * 0.3)
-        meteor_score = (completeness * 0.5 + consistency * 0.3 + lexical_diversity * 0.2)
-        rouge_score = (sentence_diversity * 0.4 + completeness * 0.4 + consistency * 0.2)
+        # ========== READABILITY SCORES ==========
         
-        overall = (bleu_score + meteor_score + rouge_score) / 3
+        # Flesch Reading Ease (0-100, higher = easier)
+        flesch_reading_ease = 206.835 - (1.015 * avg_sentence_len) - (84.6 * avg_syllables_per_word)
+        flesch_reading_ease = max(0, min(100, flesch_reading_ease))
+        
+        # Flesch-Kincaid Grade Level
+        flesch_kincaid_grade = (0.39 * avg_sentence_len) + (11.8 * avg_syllables_per_word) - 15.59
+        flesch_kincaid_grade = max(0, min(18, flesch_kincaid_grade))
+        
+        # SMOG Index
+        if total_sentences > 0:
+            smog_index = 1.0430 * ((complex_words * (30 / total_sentences)) ** 0.5) + 3.1291
+        else:
+            smog_index = 0
+        smog_index = max(0, min(18, smog_index))
+        
+        # Coleman-Liau Index
+        L = (total_chars / max(word_count, 1)) * 100
+        S = (total_sentences / max(word_count, 1)) * 100
+        coleman_liau = (0.0588 * L) - (0.296 * S) - 15.8
+        coleman_liau = max(0, min(18, coleman_liau))
+        
+        # Automated Readability Index (ARI)
+        ari = (4.71 * (total_chars / max(word_count, 1))) + (0.5 * avg_sentence_len) - 21.43
+        ari = max(0, min(18, ari))
+        
+        # Normalize readability to 0-1 (target: grade 10-14 for technical docs)
+        avg_grade = (flesch_kincaid_grade + smog_index + coleman_liau + ari) / 4
+        if 10 <= avg_grade <= 14:
+            readability_score = 1.0
+        elif 8 <= avg_grade < 10:
+            readability_score = 0.85
+        elif 14 < avg_grade <= 16:
+            readability_score = 0.85
+        elif avg_grade < 8:
+            readability_score = 0.7
+        else:
+            readability_score = 0.6
+        
+        # Flesch ease normalized
+        if 50 <= flesch_reading_ease <= 70:
+            flesch_normalized = 1.0
+        elif 40 <= flesch_reading_ease < 50 or 70 < flesch_reading_ease <= 80:
+            flesch_normalized = 0.85
+        else:
+            flesch_normalized = 0.7
+        
+        # ========== BERT SCORE (if available) ==========
+        bert_score_value = None
+        try:
+            from bert_score import score as bert_score_func
+            
+            if context and len(context) > 50:
+                reference = context
+            else:
+                reference = "This documentation provides comprehensive technical information including function descriptions, parameters, return values, usage examples, and configuration options."
+            
+            P, R, F1 = bert_score_func([result[:5000]], [reference], lang="en", verbose=False)
+            bert_score_value = float(F1[0])
+            print(f"  📊 BERTScore: {bert_score_value:.4f}")
+        except ImportError:
+            pass
+        except Exception as e:
+            print(f"  ⚠️ BERTScore failed: {e}")
+        
+        # ========== CALCULATE OVERALL SCORE ==========
+        # Weighted average: BLEU_eq + METEOR_eq + ROUGE_eq + Readability + BERTScore
+        
+        nlp_heuristic_avg = (bleu_eq * 0.35 + meteor_eq * 0.35 + rouge_eq * 0.30)
+        readability_avg = (readability_score * 0.5 + flesch_normalized * 0.5)
+        
+        if bert_score_value is not None:
+            overall = (nlp_heuristic_avg * 0.40) + (readability_avg * 0.25) + (bert_score_value * 0.35)
+        else:
+            overall = (nlp_heuristic_avg * 0.55) + (readability_avg * 0.45)
+        
+        # Boost for good documentation characteristics
+        if code_blocks >= 3:
+            overall = min(1.0, overall + 0.03)
+        if sections_found >= 5:
+            overall = min(1.0, overall + 0.03)
         
         return {
-            "bleu": f"{bleu_score:.4f}",
-            "meteor": f"{meteor_score:.4f}",
-            "rouge_l": f"{rouge_score:.4f}",
+            # Primary NLP-equivalent metrics
+            "bleu_eq": f"{bleu_eq:.4f}",
+            "meteor_eq": f"{meteor_eq:.4f}",
+            "rouge_eq": f"{rouge_eq:.4f}",
+            # Readability
+            "readability_score": f"{readability_score:.4f}",
+            "flesch_reading_ease": f"{flesch_reading_ease:.1f}",
+            "flesch_kincaid_grade": f"{flesch_kincaid_grade:.1f}",
+            "smog_index": f"{smog_index:.1f}",
+            "coleman_liau": f"{coleman_liau:.1f}",
+            "ari": f"{ari:.1f}",
+            # BERTScore
+            "bert_score": f"{bert_score_value:.4f}" if bert_score_value else "N/A",
+            # Legacy metrics (for compatibility)
+            "lexical_diversity": f"{lexical_diversity:.4f}",
+            "completeness": f"{completeness:.4f}",
+            "consistency": f"{consistency:.4f}",
+            "brevity": f"{brevity:.4f}",
+            # Overall
             "overall": f"{overall:.2%}",
+            "validity": "valid",
+            "methodology": "BLEU_eq + METEOR_eq + ROUGE_eq + Readability + BERTScore" if bert_score_value else "BLEU_eq + METEOR_eq + ROUGE_eq + Readability",
             "comprehensive": {
+                "bleu_eq": f"{bleu_eq:.4f}",
+                "meteor_eq": f"{meteor_eq:.4f}",
+                "rouge_eq": f"{rouge_eq:.4f}",
                 "lexical_diversity": f"{lexical_diversity:.4f}",
                 "completeness": f"{completeness:.4f}",
                 "consistency": f"{consistency:.4f}",
@@ -1053,18 +1689,31 @@ def calculate_comprehensive_metrics(result: str, context: str) -> dict:
                 "unique_words": unique_words,
                 "sentences": total_sentences,
                 "unique_sentences": unique_sentences,
-                "avg_sentence_length": f"{avg_sentence_len:.1f}"
+                "avg_sentence_length": f"{avg_sentence_len:.1f}",
+                "flesch_ease": f"{flesch_reading_ease:.1f}",
+                "grade_level": f"{avg_grade:.1f}",
+                "bert_score": f"{bert_score_value:.4f}" if bert_score_value else "N/A"
             }
         }
     except Exception as e:
         print(f"⚠️ Metrics calculation error: {e}")
-        # Return default metrics
+        import traceback
+        traceback.print_exc()
         return {
-            "bleu": "0.0000",
-            "meteor": "0.0000",
-            "rouge_l": "0.0000",
+            "bleu_eq": "0.0000",
+            "meteor_eq": "0.0000",
+            "rouge_eq": "0.0000",
+            "lexical_diversity": "0.0000",
+            "completeness": "0.0000", 
+            "consistency": "0.0000",
+            "brevity": "0.0000",
+            "readability_score": "0.0000",
             "overall": "0.00%",
+            "validity": "error",
             "comprehensive": {
+                "bleu_eq": "0.0000",
+                "meteor_eq": "0.0000",
+                "rouge_eq": "0.0000",
                 "lexical_diversity": "0.0000",
                 "completeness": "0.0000",
                 "consistency": "0.0000",
@@ -1087,15 +1736,52 @@ def generate_basic_repository_analysis(file_contents: dict, context: str, doc_st
     imports = []
     
     for file_path, content in file_contents.items():
-        lines = content.split('\n')
-        for line in lines:
-            line = line.strip()
-            if line.startswith('def '):
-                functions.append(f"{file_path}: {line}")
-            elif line.startswith('class '):
-                classes.append(f"{file_path}: {line}")
-            elif line.startswith(('import ', 'from ')):
-                imports.append(line)
+        # Use AST for robust parsing (handles indentation, async, decorators)
+        if file_path.endswith('.py'):
+            try:
+                import ast
+                tree = ast.parse(content)
+                
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.FunctionDef):
+                        # Get function signature
+                        args = [arg.arg for arg in node.args.args]
+                        sig = f"def {node.name}({', '.join(args)})"
+                        functions.append(f"{file_path}: {sig}")
+                    elif isinstance(node, ast.AsyncFunctionDef):
+                        # Handle async functions too
+                        args = [arg.arg for arg in node.args.args]
+                        sig = f"async def {node.name}({', '.join(args)})"
+                        functions.append(f"{file_path}: {sig}")
+                    elif isinstance(node, ast.ClassDef):
+                        bases = [b.id if isinstance(b, ast.Name) else str(b) for b in node.bases[:3]]
+                        bases_str = f"({', '.join(bases)})" if bases else ""
+                        classes.append(f"{file_path}: class {node.name}{bases_str}")
+                    elif isinstance(node, ast.Import):
+                        for alias in node.names:
+                            imports.append(f"import {alias.name}")
+                    elif isinstance(node, ast.ImportFrom):
+                        module = node.module or ''
+                        for alias in node.names:
+                            imports.append(f"from {module} import {alias.name}")
+            except SyntaxError:
+                # Fall back to line-based detection if AST fails
+                for line in content.split('\n'):
+                    stripped = line.strip()
+                    if 'def ' in stripped and '(' in stripped:
+                        functions.append(f"{file_path}: {stripped.split('#')[0].strip()}")
+                    elif stripped.startswith('class ') and ':' in stripped:
+                        classes.append(f"{file_path}: {stripped.split('#')[0].strip()}")
+                    elif stripped.startswith(('import ', 'from ')):
+                        imports.append(stripped)
+        else:
+            # Non-Python files: basic line scanning
+            for line in content.split('\n'):
+                stripped = line.strip()
+                if stripped.startswith(('function ', 'def ', 'public ', 'private ', 'func ')):
+                    functions.append(f"{file_path}: {stripped[:80]}")
+                elif stripped.startswith(('class ', 'interface ', 'struct ', 'type ')):
+                    classes.append(f"{file_path}: {stripped[:80]}")
     
     if doc_style == "google":
         return f"""# Repository Documentation (Google Style)
@@ -1770,44 +2456,66 @@ async def root():
                             if (result.metrics.comprehensive) {
                                 const comp = result.metrics.comprehensive;
                                 comprehensiveHTML = `
-                                    <div style="background: #c8e6c9; padding: 15px; border-radius: 8px; margin-top: 10px; border-left: 4px solid #388e3c;">
-                                        <h4 style="margin: 0 0 15px 0; color: #1b5e20; font-weight: bold;">📊 Detailed Parameter Scores</h4>
+                                    <div style="background: #ffebee; padding: 15px; border-radius: 8px; margin-top: 10px; border-left: 4px solid #d32f2f;">
+                                        <h4 style="margin: 0 0 15px 0; color: #c62828; font-weight: bold;">📊 Detailed Parameter Scores</h4>
                                         <div style="max-width: 600px; margin: 0 auto;">
-                                            <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #a5d6a7; background: #fff; border-radius: 4px; margin-bottom: 8px;">
-                                                <span style="color: #2e7d32; font-weight: bold;">Lexical Diversity</span>
-                                                <span style="color: #1b5e20; font-weight: bold;">${comp.lexical_diversity}</span>
+                                            <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #ef9a9a; background: #fff; border-radius: 4px; margin-bottom: 8px;">
+                                                <span style="color: #c62828; font-weight: bold;">BLEU_eq (N-gram Precision)</span>
+                                                <span style="color: #b71c1c; font-weight: bold;">${comp.bleu_eq || 'N/A'}</span>
                                             </div>
-                                            <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #a5d6a7; background: #fff; border-radius: 4px; margin-bottom: 8px;">
-                                                <span style="color: #1976d2; font-weight: bold;">Completeness</span>
-                                                <span style="color: #0d47a1; font-weight: bold;">${comp.completeness}</span>
+                                            <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #ef9a9a; background: #fff; border-radius: 4px; margin-bottom: 8px;">
+                                                <span style="color: #d32f2f; font-weight: bold;">METEOR_eq (Term Match)</span>
+                                                <span style="color: #c62828; font-weight: bold;">${comp.meteor_eq || 'N/A'}</span>
                                             </div>
-                                            <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #a5d6a7; background: #fff; border-radius: 4px; margin-bottom: 8px;">
-                                                <span style="color: #f57c00; font-weight: bold;">Consistency</span>
-                                                <span style="color: #e65100; font-weight: bold;">${comp.consistency}</span>
+                                            <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #ef9a9a; background: #fff; border-radius: 4px; margin-bottom: 8px;">
+                                                <span style="color: #e64a19; font-weight: bold;">ROUGE_eq (Recall Score)</span>
+                                                <span style="color: #bf360c; font-weight: bold;">${comp.rouge_eq || 'N/A'}</span>
                                             </div>
-                                            <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #a5d6a7; background: #fff; border-radius: 4px; margin-bottom: 8px;">
-                                                <span style="color: #7b1fa2; font-weight: bold;">Brevity</span>
-                                                <span style="color: #4a148c; font-weight: bold;">${comp.brevity}</span>
+                                            <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #ef9a9a; background: #fff; border-radius: 4px; margin-bottom: 8px;">
+                                                <span style="color: #ad1457; font-weight: bold;">Lexical Diversity</span>
+                                                <span style="color: #880e4f; font-weight: bold;">${comp.lexical_diversity || 'N/A'}</span>
                                             </div>
-                                            <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #a5d6a7; background: #fff; border-radius: 4px; margin-bottom: 8px;">
+                                            <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #ef9a9a; background: #fff; border-radius: 4px; margin-bottom: 8px;">
+                                                <span style="color: #6a1b9a; font-weight: bold;">Completeness</span>
+                                                <span style="color: #4a148c; font-weight: bold;">${comp.completeness || 'N/A'}</span>
+                                            </div>
+                                            <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #ef9a9a; background: #fff; border-radius: 4px; margin-bottom: 8px;">
+                                                <span style="color: #ff6f00; font-weight: bold;">Consistency</span>
+                                                <span style="color: #e65100; font-weight: bold;">${comp.consistency || 'N/A'}</span>
+                                            </div>
+                                            <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #ef9a9a; background: #fff; border-radius: 4px; margin-bottom: 8px;">
+                                                <span style="color: #00695c; font-weight: bold;">Brevity</span>
+                                                <span style="color: #004d40; font-weight: bold;">${comp.brevity || 'N/A'}</span>
+                                            </div>
+                                            <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #ef9a9a; background: #fce4ec; border-radius: 4px; margin-bottom: 8px;">
+                                                <span style="color: #c2185b; font-weight: bold;">📖 Flesch Reading Ease</span>
+                                                <span style="color: #ad1457; font-weight: bold;">${comp.flesch_ease || 'N/A'}</span>
+                                            </div>
+                                            <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #ef9a9a; background: #fce4ec; border-radius: 4px; margin-bottom: 8px;">
+                                                <span style="color: #c2185b; font-weight: bold;">📚 Grade Level</span>
+                                                <span style="color: #ad1457; font-weight: bold;">${comp.grade_level || 'N/A'}</span>
+                                            </div>
+                                            ${comp.bert_score && comp.bert_score !== 'N/A' ? `
+                                            <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #ef9a9a; background: #fce4ec; border-radius: 4px; margin-bottom: 8px;">
+                                                <span style="color: #880e4f; font-weight: bold;">🤖 BERTScore</span>
+                                                <span style="color: #4a148c; font-weight: bold;">${comp.bert_score}</span>
+                                            </div>
+                                            ` : ''}
+                                            <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #ef9a9a; background: #fff; border-radius: 4px; margin-bottom: 8px;">
                                                 <span style="color: #555; font-weight: bold;">Word Count</span>
-                                                <span style="color: #333; font-weight: bold;">${comp.word_count}</span>
+                                                <span style="color: #333; font-weight: bold;">${comp.word_count || 0}</span>
                                             </div>
-                                            <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #a5d6a7; background: #fff; border-radius: 4px; margin-bottom: 8px;">
+                                            <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #ef9a9a; background: #fff; border-radius: 4px; margin-bottom: 8px;">
                                                 <span style="color: #555; font-weight: bold;">Unique Words</span>
-                                                <span style="color: #333; font-weight: bold;">${comp.unique_words}</span>
+                                                <span style="color: #333; font-weight: bold;">${comp.unique_words || 0}</span>
                                             </div>
-                                            <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #a5d6a7; background: #fff; border-radius: 4px; margin-bottom: 8px;">
+                                            <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #ef9a9a; background: #fff; border-radius: 4px; margin-bottom: 8px;">
                                                 <span style="color: #555; font-weight: bold;">Total Sentences</span>
-                                                <span style="color: #333; font-weight: bold;">${comp.sentences}</span>
-                                            </div>
-                                            <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #a5d6a7; background: #fff; border-radius: 4px; margin-bottom: 8px;">
-                                                <span style="color: #555; font-weight: bold;">Unique Sentences</span>
-                                                <span style="color: #333; font-weight: bold;">${comp.unique_sentences}</span>
+                                                <span style="color: #333; font-weight: bold;">${comp.sentences || 0}</span>
                                             </div>
                                             <div style="display: flex; justify-content: space-between; padding: 10px; background: #fff; border-radius: 4px;">
                                                 <span style="color: #555; font-weight: bold;">Avg Sentence Length</span>
-                                                <span style="color: #333; font-weight: bold;">${comp.avg_sentence_length} words</span>
+                                                <span style="color: #333; font-weight: bold;">${comp.avg_sentence_length || '0'} words</span>
                                             </div>
                                         </div>
                                     </div>
@@ -1815,36 +2523,46 @@ async def root():
                             }
                             
                             metricsHTML = `
-                                <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #2196f3;">
-                                    <h4 style="margin: 0 0 15px 0; color: #1565c0;">📈 NLP Quality Metrics</h4>
+                                <div style="background: #ffebee; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #d32f2f;">
+                                    <h4 style="margin: 0 0 15px 0; color: #c62828;">📈 Documentation Quality Metrics</h4>
                                     <div class="metrics-grid">
-                                        <div class="metric-box" style="border-color: #2196f3;">
-                                            <span class="value" style="color: #1565c0;">${result.metrics.bleu}</span>
+                                        <div class="metric-box" style="border-color: #d32f2f;">
+                                            <span class="value" style="color: #c62828;">${result.metrics.bleu_eq || 'N/A'}</span>
                                             <span class="label">BLEU_eq</span>
                                             <span style="font-size: 0.75em; color: #999; display: block; margin-top: 4px;">N-gram Precision</span>
                                         </div>
-                                        <div class="metric-box" style="border-color: #4caf50;">
-                                            <span class="value" style="color: #2e7d32;">${result.metrics.meteor}</span>
+                                        <div class="metric-box" style="border-color: #b71c1c;">
+                                            <span class="value" style="color: #b71c1c;">${result.metrics.meteor_eq || 'N/A'}</span>
                                             <span class="label">METEOR_eq</span>
-                                            <span style="font-size: 0.75em; color: #999; display: block; margin-top: 4px;">Semantic Match</span>
+                                            <span style="font-size: 0.75em; color: #999; display: block; margin-top: 4px;">Term Match</span>
                                         </div>
-                                        <div class="metric-box" style="border-color: #ff9800;">
-                                            <span class="value" style="color: #f57c00;">${result.metrics.rouge_l}</span>
+                                        <div class="metric-box" style="border-color: #ff5722;">
+                                            <span class="value" style="color: #e64a19;">${result.metrics.rouge_eq || 'N/A'}</span>
                                             <span class="label">ROUGE_eq</span>
-                                            <span style="font-size: 0.75em; color: #999; display: block; margin-top: 4px;">LCS F1-Score</span>
+                                            <span style="font-size: 0.75em; color: #999; display: block; margin-top: 4px;">Recall Score</span>
                                         </div>
-                                        <div class="metric-box" style="border-color: #9c27b0;">
-                                            <span class="value" style="color: #7b1fa2;">${result.metrics.overall}</span>
+                                        <div class="metric-box" style="border-color: #880e4f;">
+                                            <span class="value" style="color: #ad1457;">${result.metrics.overall}</span>
                                             <span class="label">Overall Quality</span>
-                                            <span style="font-size: 0.75em; color: #999; display: block; margin-top: 4px;">Aggregate Score</span>
+                                            <span style="font-size: 0.75em; color: #999; display: block; margin-top: 4px;">Weighted Score</span>
                                         </div>
                                     </div>
+                                    <div style="text-align: center; margin-top: 10px; padding: 8px; background: #fce4ec; border-radius: 4px;">
+                                        <span style="color: #c2185b; font-weight: bold;">📖 Readability: ${result.metrics.readability_score || 'N/A'}</span>
+                                        <span style="font-size: 0.75em; color: #666; display: block;">Grade Level: ${result.metrics.flesch_kincaid_grade || 'N/A'}</span>
+                                    </div>
+                                    ${result.metrics.bert_score && result.metrics.bert_score !== 'N/A' ? `
+                                        <div style="text-align: center; margin-top: 10px; padding: 8px; background: #fce4ec; border-radius: 4px;">
+                                            <span style="color: #880e4f; font-weight: bold;">🤖 BERTScore: ${result.metrics.bert_score}</span>
+                                            <span style="font-size: 0.75em; color: #666; display: block;">Semantic Similarity</span>
+                                        </div>
+                                    ` : ''}
                                     ${comprehensiveHTML ? `
                                         <button class="expand-btn" onclick="toggleDetailedMetrics()" id="expand-metrics-btn">
                                             ▼ Show Detailed Parameter Scores
                                         </button>
                                     ` : ''}
-                                    ${result.metrics.reference ? `<p style="margin: 10px 0 0 0; color: #666; font-size: 0.85em; text-align: center;">📚 Reference: ${result.metrics.reference}</p>` : ''}
+                                    ${result.metrics.methodology ? `<p style="margin: 10px 0 0 0; color: #666; font-size: 0.85em; text-align: center;">📚 Method: ${result.metrics.methodology}</p>` : ''}
                                 </div>
                                 <div id="detailed-metrics" style="display: none;">
                                     ${comprehensiveHTML}
@@ -1965,11 +2683,11 @@ Target audience: Computer science students and researchers"></textarea>
                     <label>GENERATION MODE</label>
                     <div class="radio-group">
                         <label>
-                            <input type="radio" name="generation_mode" value="rule_based" checked>
-                            Rule-Based (Instant, Templates)
+                            <input type="radio" name="generation_mode" value="phi3_only">
+                            Phi-3 Only (Local, 30-60s)
                         </label>
                         <label>
-                            <input type="radio" name="generation_mode" value="gemini_only">
+                            <input type="radio" name="generation_mode" value="gemini_only" checked>
                             Gemini Only (Fast, 2-5s)
                         </label>
                         <label>
@@ -1978,7 +2696,7 @@ Target audience: Computer science students and researchers"></textarea>
                         </label>
                     </div>
                     <div class="example">
-                        Rule-Based: Instant | Gemini: Fast & Good | Phi-3: Slow but Best
+                        Phi-3: Local/Private | Gemini: Fast & Good | Phi-3+Gemini: Best Quality
                     </div>
                 </div>
                 
@@ -2022,7 +2740,7 @@ async def generate_docs(
     context: str = Form(""), 
     doc_style: str = Form("technical_comprehensive"),
     temperature: float = Form(0.3),
-    generation_mode: str = Form("rule_based")
+    generation_mode: str = Form("gemini_only")
 ):
     """Generate documentation for repository from Git URL, ZIP, or code snippet"""
     global doc_generator
@@ -2189,23 +2907,29 @@ async def generate_docs(
             try:
                 # Enhance context with RAG if available
                 enhanced_context = context
-                if rag_system and context.strip():
+                if rag_system and rag_system.is_trained:
                     try:
-                        print("🔍 RAG: Querying knowledge base for relevant context...")
-                        # Use RAG to retrieve relevant documentation patterns
-                        rag_results = rag_system.retrieve(context, top_k=5)
+                        print("🔍 RAG: Querying FAISS index for relevant code context...")
+                        # Use RAG to retrieve relevant code chunks (FIXED: use search() method)
+                        query = context if context.strip() else "main function entry point documentation"
+                        rag_results = rag_system.search(query, k=5)
                         if rag_results:
-                            rag_context = "\n".join([doc.get('content', '') for doc in rag_results[:3]])
-                            enhanced_context = f"{context}\n\n[RAG Enhanced Context]:\n{rag_context}"
-                            print(f"✅ RAG: Enhanced with {len(rag_results)} knowledge base entries")
+                            rag_context = "\n\n".join([
+                                f"[Related {r['chunk']['type']}] (similarity: {r['score']:.2f})\n{r['chunk']['content'][:500]}"
+                                for r in rag_results if r['score'] > 0.3
+                            ])
+                            if rag_context:
+                                enhanced_context = f"{context}\n\n[RAG Retrieved Context from Codebase]:\n{rag_context}"
+                                print(f"✅ RAG: Enhanced with {len([r for r in rag_results if r['score'] > 0.3])} relevant code chunks")
+                            else:
+                                print("✅ RAG: No high-relevance matches found (score > 0.3)")
                         else:
-                            enhanced_context = context
-                            print("✅ RAG: No additional context found, using original")
+                            print("✅ RAG: No matches found in index")
                     except Exception as rag_e:
-                        print(f"⚠️ RAG enhancement failed: {rag_e}, using original context")
+                        print(f"⚠️ RAG search failed: {rag_e}, using original context")
                         enhanced_context = context
                 elif rag_system:
-                    print("💡 RAG: Available but no user context provided")
+                    print("💡 RAG: System loaded but index not built yet")
                 else:
                     print("ℹ️ RAG: Not enabled for this session")
                 
@@ -2251,6 +2975,9 @@ async def generate_docs(
                 print("\n" + "="*60)
                 print("📊 DOCUMENTATION QUALITY SCORES")
                 print("="*60)
+                
+                # Declare globals for metrics modules
+                global SphinxEvaluator, ComprehensiveEvaluator, compute_codesearchnet_metrics
                 
                 # Load metrics modules if not already loaded
                 if SphinxEvaluator is None or ComprehensiveEvaluator is None:
@@ -2380,17 +3107,43 @@ async def generate_docs(
                             from gemini_context_enhancer import compute_codesearchnet_metrics as csn_func
                             compute_codesearchnet_metrics = csn_func
                         
-                        csn_metrics = compute_codesearchnet_metrics(result)
+                        # Extract function/class counts from documentation to validate metrics
+                        code_analysis = None
+                        try:
+                            # Look for patterns like "0 functions" or "Functions: 0"
+                            func_match = re.search(r'(\d+)\s*functions?', result.lower())
+                            class_match = re.search(r'(\d+)\s*classes?', result.lower())
+                            func_count = int(func_match.group(1)) if func_match else -1
+                            class_count = int(class_match.group(1)) if class_match else -1
+                            
+                            # Only create analysis if we found counts
+                            if func_count >= 0 or class_count >= 0:
+                                code_analysis = {
+                                    'function_count': max(func_count, 0),
+                                    'class_count': max(class_count, 0)
+                                }
+                                if func_count == 0 and class_count == 0:
+                                    print(f"  ⚠️ WARNING: 0 functions and 0 classes detected - metrics will be invalid")
+                        except Exception as parse_e:
+                            pass  # If we can't parse, let metrics calculate normally
+                        
+                        csn_metrics = compute_codesearchnet_metrics(result, code_analysis)
                         overall = csn_metrics.get('overall', 0)
-                        print(f"  📚 Evaluated against professional documentation standards:")
-                        print(f"    - Structural Quality: {csn_metrics.get('structural_quality', 0):.2%} (Args, Returns, Raises, Examples)")
-                        print(f"    - Vocabulary Alignment: {csn_metrics.get('vocabulary_alignment', 0):.2%} (technical terms)")
-                        print(f"    - Completeness: {csn_metrics.get('completeness', 0):.2%} (length, examples, diversity)")
-                        print(f"    - Coherence: {csn_metrics.get('coherence', 0):.2%} (flow, formatting)")
-                        print(f"  📊 Metric Equivalents:")
-                        print(f"    - BLEU Score: {csn_metrics.get('bleu', 0):.4f}")
-                        print(f"    - METEOR Score: {csn_metrics.get('meteor', 0):.4f}")
-                        print(f"    - ROUGE-L Score: {csn_metrics.get('rouge_l', 0):.4f}")
+                        validity = csn_metrics.get('validity', 'valid')
+                        
+                        if validity == 'invalid':
+                            print(f"  ❌ METRICS INVALID: {csn_metrics.get('reason', 'No code elements detected')}")
+                            print(f"  📊 All scores set to 0.0 (documentation has no meaningful content to evaluate)")
+                        else:
+                            print(f"  📚 Evaluated against professional documentation standards:")
+                            print(f"    - Structural Quality: {csn_metrics.get('structural_quality', 0):.2%} (Args, Returns, Raises, Examples)")
+                            print(f"    - Vocabulary Alignment: {csn_metrics.get('vocabulary_alignment', 0):.2%} (technical terms)")
+                            print(f"    - Completeness: {csn_metrics.get('completeness', 0):.2%} (length, examples, diversity)")
+                            print(f"    - Coherence: {csn_metrics.get('coherence', 0):.2%} (flow, formatting)")
+                            print(f"  📊 Heuristic Quality Scores (pattern-based, not reference BLEU/METEOR/ROUGE):")
+                            print(f"    - BLEU-like: {csn_metrics.get('bleu', 0):.4f}")
+                            print(f"    - METEOR-like: {csn_metrics.get('meteor', 0):.4f}")
+                            print(f"    - ROUGE-L-like: {csn_metrics.get('rouge_l', 0):.4f}")
                         print(f"  🎯 OVERALL QUALITY: {overall:.2%}")
                     else:
                         print("  ⚠️ Quality metrics not available (CodeSearchNet disabled)")
@@ -2430,6 +3183,45 @@ async def generate_docs(
                 except Exception as metrics_e:
                     print(f"  ⚠️ NLP metrics evaluation failed: {metrics_e}")
                 
+                # 4. REAL QUALITY METRICS (industry-standard, no reference needed)
+                print("\n🔹 REAL DOCUMENTATION QUALITY METRICS:")
+                real_metrics = None
+                try:
+                    if evaluate_documentation_quality is None:
+                        from real_quality_metrics import evaluate_documentation_quality as real_func
+                        evaluate_documentation_quality = real_func
+                    
+                    real_metrics = evaluate_documentation_quality(result, code_analysis)
+                    
+                    if real_metrics.get('validity') == 'invalid':
+                        print(f"  ❌ INVALID: No functions/classes to evaluate")
+                    else:
+                        print(f"  📊 Coverage Metrics (what % is documented):")
+                        print(f"    - Function Coverage: {real_metrics['coverage']['function_coverage']:.1%}")
+                        print(f"    - Parameter Coverage: {real_metrics['coverage']['parameter_coverage']:.1%}")
+                        print(f"    - Overall Coverage: {real_metrics['coverage']['overall']:.1%}")
+                        
+                        print(f"  📝 Completeness (are all sections present):")
+                        print(f"    - Description: {'✅' if real_metrics['completeness']['has_description'] else '❌'}")
+                        print(f"    - Parameters: {'✅' if real_metrics['completeness']['has_parameters'] else '❌'}")
+                        print(f"    - Returns: {'✅' if real_metrics['completeness']['has_returns'] else '❌'}")
+                        print(f"    - Examples: {'✅' if real_metrics['completeness']['has_examples'] else '❌'}")
+                        print(f"    - Score: {real_metrics['completeness']['score']:.1%}")
+                        
+                        print(f"  📖 Readability (standard metrics):")
+                        print(f"    - Flesch Reading Ease: {real_metrics['readability']['flesch_reading_ease']:.1f}/100")
+                        print(f"    - Flesch-Kincaid Grade: {real_metrics['readability']['flesch_kincaid_grade']:.1f}")
+                        print(f"    - Score: {real_metrics['readability']['score']:.1%}")
+                        
+                        print(f"  ⭐ Quality (is it actually useful):")
+                        print(f"    - Non-trivial Descriptions: {real_metrics['quality']['non_trivial_descriptions']:.1%}")
+                        print(f"    - Specific Types: {real_metrics['quality']['specific_types']:.1%}")
+                        print(f"    - Score: {real_metrics['quality']['score']:.1%}")
+                        
+                        print(f"\n  🎯 OVERALL: {real_metrics['overall_score']:.1%} (Grade: {real_metrics['grade']})")
+                except Exception as real_e:
+                    print(f"  ⚠️ Real quality metrics failed: {real_e}")
+                
                 print("\n" + "="*60 + "\n")
                 
                 response_data = {
@@ -2442,7 +3234,8 @@ async def generate_docs(
                 # ALWAYS include COMPREHENSIVE metrics in response for UI display
                 if csn_metrics:
                     overall_score = csn_metrics.get('overall', 0)
-                    if overall_score == 0:
+                    validity = csn_metrics.get('validity', 'valid')
+                    if overall_score == 0 and validity != 'invalid':
                         # Calculate if not provided
                         overall_score = (csn_metrics.get('bleu', 0) + csn_metrics.get('meteor', 0) + csn_metrics.get('rouge_l', 0)) / 3
                     
@@ -2451,7 +3244,9 @@ async def generate_docs(
                         "meteor": f"{csn_metrics.get('meteor', 0):.4f}",
                         "rouge_l": f"{csn_metrics.get('rouge_l', 0):.4f}",
                         "overall": f"{overall_score:.2%}",
-                        "reference": "Professional Documentation Standards",
+                        "validity": validity,
+                        "reference": "Heuristic Pattern Analysis" if validity == 'valid' else "Invalid - No code elements detected",
+                        "note": csn_metrics.get('note', csn_metrics.get('reason', '')),
                         # Add comprehensive metrics for detailed display
                         "comprehensive": {
                             "lexical_diversity": f"{comprehensive_metrics.get('lexical_diversity', 0):.4f}",
@@ -2503,6 +3298,26 @@ async def generate_docs(
                             "unique_sentences": 0,
                             "avg_sentence_length": "0.0"
                         }
+                    }
+                
+                # Add REAL quality metrics (industry standard, no reference needed)
+                if real_metrics:
+                    response_data["real_quality"] = {
+                        "overall_score": f"{real_metrics['overall_score']:.1%}",
+                        "grade": real_metrics['grade'],
+                        "validity": real_metrics['validity'],
+                        "coverage": {
+                            "functions": f"{real_metrics['coverage']['function_coverage']:.1%}",
+                            "parameters": f"{real_metrics['coverage']['parameter_coverage']:.1%}",
+                            "overall": f"{real_metrics['coverage']['overall']:.1%}"
+                        },
+                        "completeness": f"{real_metrics['completeness']['score']:.1%}",
+                        "readability": {
+                            "score": f"{real_metrics['readability']['score']:.1%}",
+                            "flesch_ease": real_metrics['readability']['flesch_reading_ease'],
+                            "flesch_grade": real_metrics['readability']['flesch_kincaid_grade']
+                        },
+                        "quality": f"{real_metrics['quality']['score']:.1%}"
                     }
                 
                 return JSONResponse(response_data)
@@ -2750,17 +3565,39 @@ async def demo_info():
         ]
     })
 
+def preload_models(preload_phi3: bool = False, preload_rag: bool = True):
+    """Optionally preload models at startup for faster first request"""
+    print("\n🔧 Pre-loading models for faster generation...")
+    
+    # Always preload RAG (it's fast and useful)
+    if preload_rag:
+        print("📚 Pre-loading RAG system (FAISS + sentence-transformers)...")
+        lazy_load_rag_system()
+    
+    # Optionally preload Phi-3 (slow but needed for Phi-3 modes)
+    if preload_phi3:
+        print("🧠 Pre-loading Phi-3 model (this takes 1-2 minutes)...")
+        lazy_load_advanced_system()
+    
+    print("✅ Model pre-loading complete!\n")
+
 def start_server_with_tunnel():
     """Start FastAPI server with ngrok tunnel"""
     print("🌟 Starting Context-Aware Documentation Generator (Repository Edition)")
     print("=" * 70)
     
-    # Install dependencies
+    # Install ALL dependencies
     try:
-        if not install_fastapi_deps():
-            print("⚠️ FastAPI dependencies installation failed, but will try to continue...")
+        if not install_all_requirements():
+            print("⚠️ Some dependencies may be missing, but will try to continue...")
     except Exception as e:
         print(f"⚠️ Dependency installation error (non-critical): {e}")
+    
+    # Pre-load models for faster first request
+    try:
+        preload_models(preload_phi3=False, preload_rag=True)  # RAG is fast, Phi-3 is slow
+    except Exception as e:
+        print(f"⚠️ Model preload error (non-critical): {e}")
     
     tunnel = None
     try:
@@ -2781,8 +3618,8 @@ def start_server_with_tunnel():
     print("🔐 Password: nOtE7thIs")
     print(f"📊 Advanced System: {'✅ Fully Loaded' if ADVANCED_SYSTEM_AVAILABLE and doc_generator else '⚠️ Limited Mode'}")
     print(f"🤖 Phi-3 + Gemini: {'✅ Ready (no timeout)' if doc_generator else '⚠️ Will initialize on demand'}")
-    print(f"🔍 RAG System: {'✅ Enabled' if rag_system else '❌ Disabled'}")
-    print(f"📈 Quality Metrics: ✅ BLEU_eq, METEOR_eq, ROUGE_eq + Comprehens ive Analysis")
+    print(f"🔍 RAG System: {'✅ Loaded' if rag_system else '⏳ Will load on demand (FAISS + Sentence-Transformers)'}")
+    print(f"📈 Quality Metrics: ✅ Heuristics + Readability (Flesch, SMOG, ARI) + BERTScore")
     
     try:
         # Start server

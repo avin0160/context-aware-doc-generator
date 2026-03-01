@@ -349,6 +349,407 @@ class JavaScriptParser:
         
         return classes
 
+class JavaParser:
+    """Parse Java code"""
+    
+    @staticmethod
+    def parse_functions(content: str, file_path: str) -> List[MultiLangFunctionInfo]:
+        """Extract methods from Java code"""
+        functions = []
+        
+        # Regex for Java method declarations
+        # Matches: public/private/protected + static/abstract + return_type + name(params)
+        method_pattern = r'''
+            ^\s*                                           # Start, optional whitespace
+            (?:@\w+(?:\([^)]*\))?\s*)*                     # Annotations like @Override, @Test
+            (public|private|protected)?\s*                 # Visibility
+            (static|abstract|final|synchronized|native)*\s*  # Modifiers
+            (\w+(?:<[^>]+>)?(?:\[\])?)\s+                  # Return type (including generics, arrays)
+            (\w+)\s*                                       # Method name
+            \(([^)]*)\)                                    # Parameters
+            (?:\s*throws\s+[\w,\s]+)?                      # Optional throws clause
+            \s*\{                                          # Opening brace
+        '''
+        
+        for match in re.finditer(method_pattern, content, re.MULTILINE | re.VERBOSE):
+            visibility = match.group(1) or 'package'
+            modifiers = match.group(2) or ''
+            return_type = match.group(3)
+            name = match.group(4)
+            params_str = match.group(5)
+            
+            # Skip constructors (return type same as class name pattern)
+            if return_type == name:
+                continue
+            
+            # Parse parameters
+            params = []
+            if params_str.strip():
+                for param in params_str.split(','):
+                    param = param.strip()
+                    if param:
+                        parts = param.split()
+                        if len(parts) >= 2:
+                            param_type = ' '.join(parts[:-1])
+                            param_name = parts[-1]
+                            params.append((param_name, param_type))
+            
+            line_start = content[:match.start()].count('\n') + 1
+            
+            # Extract Javadoc
+            docstring = JavaParser._extract_javadoc(content, match.start())
+            
+            # Calculate complexity
+            func_end = JavaParser._find_method_end(content, match.end())
+            func_body = content[match.end():func_end]
+            complexity = 1 + func_body.count('if ') + func_body.count('for ') + func_body.count('while ') + func_body.count('switch ') + func_body.count('catch ')
+            
+            func_info = MultiLangFunctionInfo(
+                name=name,
+                language='java',
+                file_path=file_path,
+                line_start=line_start,
+                line_end=line_start + func_body.count('\n'),
+                params=params,
+                return_type=return_type,
+                docstring=docstring,
+                complexity=complexity,
+                is_async=False,
+                visibility=visibility,
+                is_static='static' in modifiers,
+                decorators=[],
+                annotations=[]
+            )
+            functions.append(func_info)
+        
+        return functions
+    
+    @staticmethod
+    def _extract_javadoc(content: str, pos: int) -> Optional[str]:
+        """Extract Javadoc comment before method"""
+        lines = content[:pos].split('\n')
+        doc_lines = []
+        in_javadoc = False
+        
+        for line in reversed(lines[-20:]):
+            line = line.strip()
+            if line.endswith('*/'):
+                in_javadoc = True
+                continue
+            elif in_javadoc:
+                if line.startswith('/**'):
+                    doc_lines.insert(0, line[3:].strip())
+                    break
+                elif line.startswith('*'):
+                    doc_lines.insert(0, line[1:].strip())
+            elif line and not line.startswith('@') and not line.startswith('//'):
+                break
+        
+        return '\n'.join(doc_lines) if doc_lines else None
+    
+    @staticmethod
+    def _find_method_end(content: str, start: int) -> int:
+        """Find the end of a Java method by matching braces"""
+        brace_count = 1
+        pos = start
+        in_string = False
+        string_char = None
+        
+        while pos < len(content) and brace_count > 0:
+            char = content[pos]
+            if char in '"\'':
+                if not in_string:
+                    in_string = True
+                    string_char = char
+                elif char == string_char and content[pos-1] != '\\':
+                    in_string = False
+            elif not in_string:
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+            pos += 1
+        
+        return pos
+    
+    @staticmethod
+    def parse_classes(content: str, file_path: str) -> List[MultiLangClassInfo]:
+        """Extract classes from Java code"""
+        classes = []
+        
+        # Match class declarations
+        class_pattern = r'''
+            ^\s*
+            (?:@\w+(?:\([^)]*\))?\s*)*                     # Annotations
+            (public|private|protected)?\s*                 # Visibility
+            (abstract|final|static)*\s*                    # Modifiers
+            (class|interface|enum)\s+                      # Type
+            (\w+)                                          # Name
+            (?:\s*<[^>]+>)?                                # Generic parameters
+            (?:\s+extends\s+([\w.]+(?:<[^>]+>)?))?         # Extends
+            (?:\s+implements\s+([\w.,\s<>]+))?             # Implements
+            \s*\{
+        '''
+        
+        for match in re.finditer(class_pattern, content, re.MULTILINE | re.VERBOSE):
+            visibility = match.group(1) or 'package'
+            modifiers = match.group(2) or ''
+            class_type = match.group(3)
+            name = match.group(4)
+            extends = [match.group(5)] if match.group(5) else []
+            implements = [i.strip() for i in match.group(6).split(',')] if match.group(6) else []
+            
+            line_start = content[:match.start()].count('\n') + 1
+            
+            class_info = MultiLangClassInfo(
+                name=name,
+                language='java',
+                file_path=file_path,
+                line_start=line_start,
+                line_end=line_start + 100,  # Approximate
+                methods=[],
+                fields=[],
+                extends=extends,
+                implements=implements,
+                docstring=JavaParser._extract_javadoc(content, match.start()),
+                visibility=visibility,
+                is_abstract='abstract' in modifiers or class_type == 'interface',
+                annotations=[]
+            )
+            classes.append(class_info)
+        
+        return classes
+
+
+class CppParser:
+    """Parse C/C++ code"""
+    
+    @staticmethod
+    def parse_functions(content: str, file_path: str) -> List[MultiLangFunctionInfo]:
+        """Extract functions from C/C++ code"""
+        functions = []
+        
+        # Regex for C/C++ function declarations
+        # Handles: return_type name(params) { or return_type Class::name(params) {
+        func_pattern = r'''
+            ^\s*                                           # Start
+            (?:static|inline|virtual|explicit|extern|const)*\s*  # Optional modifiers
+            ([\w:*&<>,\s]+?)                               # Return type (complex)
+            \s+
+            ((?:\w+::)?[\w~]+)                             # Function name (may include class::)
+            \s*
+            \(([^)]*)\)                                    # Parameters
+            \s*
+            (?:const)?                                     # Optional const qualifier
+            (?:\s*override)?                               # Optional override
+            (?:\s*noexcept(?:\([^)]*\))?)?                 # Optional noexcept
+            \s*\{                                          # Opening brace
+        '''
+        
+        for match in re.finditer(func_pattern, content, re.MULTILINE | re.VERBOSE):
+            return_type = match.group(1).strip()
+            full_name = match.group(2)
+            params_str = match.group(3)
+            
+            # Extract just the function name (strip class:: prefix)
+            if '::' in full_name:
+                name = full_name.split('::')[-1]
+            else:
+                name = full_name
+            
+            # Skip if looks like control structure
+            if name.lower() in ['if', 'for', 'while', 'switch', 'catch']:
+                continue
+            
+            # Parse parameters
+            params = []
+            if params_str.strip():
+                # Split by comma but respect angle brackets for templates
+                param_parts = CppParser._split_params(params_str)
+                for param in param_parts:
+                    param = param.strip()
+                    if param and param != 'void':
+                        # Get the last word as param name
+                        parts = param.replace('*', ' ').replace('&', ' ').split()
+                        if len(parts) >= 2:
+                            param_name = parts[-1]
+                            param_type = ' '.join(parts[:-1])
+                            params.append((param_name, param_type))
+                        elif len(parts) == 1:
+                            params.append((parts[0], None))
+            
+            line_start = content[:match.start()].count('\n') + 1
+            
+            # Extract documentation comment
+            docstring = CppParser._extract_comment(content, match.start())
+            
+            # Calculate complexity
+            func_end = CppParser._find_function_end(content, match.end())
+            func_body = content[match.end():func_end]
+            complexity = 1 + func_body.count('if ') + func_body.count('if(') + func_body.count('for ') + func_body.count('for(') + func_body.count('while ') + func_body.count('while(') + func_body.count('switch ') + func_body.count('switch(')
+            
+            func_info = MultiLangFunctionInfo(
+                name=name,
+                language='cpp' if '.cpp' in file_path or '.hpp' in file_path or '.cc' in file_path else 'c',
+                file_path=file_path,
+                line_start=line_start,
+                line_end=line_start + func_body.count('\n'),
+                params=params,
+                return_type=return_type,
+                docstring=docstring,
+                complexity=complexity,
+                is_async=False,
+                visibility='public',
+                is_static='static' in return_type,
+                decorators=[],
+                annotations=[]
+            )
+            functions.append(func_info)
+        
+        return functions
+    
+    @staticmethod
+    def _split_params(params_str: str) -> List[str]:
+        """Split parameters respecting template brackets"""
+        params = []
+        current = ""
+        depth = 0
+        
+        for char in params_str:
+            if char == '<':
+                depth += 1
+                current += char
+            elif char == '>':
+                depth -= 1
+                current += char
+            elif char == ',' and depth == 0:
+                params.append(current)
+                current = ""
+            else:
+                current += char
+        
+        if current.strip():
+            params.append(current)
+        
+        return params
+    
+    @staticmethod
+    def _extract_comment(content: str, pos: int) -> Optional[str]:
+        """Extract C-style comment or Doxygen comment before function"""
+        lines = content[:pos].split('\n')
+        doc_lines = []
+        in_comment = False
+        
+        for line in reversed(lines[-15:]):
+            line = line.strip()
+            if line.endswith('*/'):
+                in_comment = True
+                continue
+            elif in_comment:
+                if line.startswith('/*') or line.startswith('/**'):
+                    doc_lines.insert(0, line[2:].strip() if line.startswith('/*') else line[3:].strip())
+                    break
+                elif line.startswith('*'):
+                    doc_lines.insert(0, line[1:].strip())
+            elif line.startswith('//'):
+                doc_lines.insert(0, line[2:].strip())
+            elif line and not line.startswith('#'):
+                break
+        
+        return '\n'.join(doc_lines) if doc_lines else None
+    
+    @staticmethod
+    def _find_function_end(content: str, start: int) -> int:
+        """Find the end of a C/C++ function by matching braces"""
+        brace_count = 1
+        pos = start
+        in_string = False
+        string_char = None
+        in_comment = False
+        
+        while pos < len(content) and brace_count > 0:
+            char = content[pos]
+            
+            # Handle comments
+            if not in_string and pos + 1 < len(content):
+                if content[pos:pos+2] == '//':
+                    # Single line comment - skip to end of line
+                    while pos < len(content) and content[pos] != '\n':
+                        pos += 1
+                    continue
+                elif content[pos:pos+2] == '/*':
+                    in_comment = True
+                    pos += 2
+                    continue
+                elif content[pos:pos+2] == '*/' and in_comment:
+                    in_comment = False
+                    pos += 2
+                    continue
+            
+            if in_comment:
+                pos += 1
+                continue
+            
+            # Handle strings
+            if char in '"\'':
+                if not in_string:
+                    in_string = True
+                    string_char = char
+                elif char == string_char and content[pos-1] != '\\':
+                    in_string = False
+            elif not in_string:
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+            pos += 1
+        
+        return pos
+    
+    @staticmethod
+    def parse_classes(content: str, file_path: str) -> List[MultiLangClassInfo]:
+        """Extract classes/structs from C/C++ code"""
+        classes = []
+        
+        # Match class/struct declarations
+        class_pattern = r'''
+            ^\s*
+            (template\s*<[^>]+>\s*)?                       # Optional template
+            (class|struct)\s+                              # class or struct
+            (?:__declspec\([^)]+\)\s*)?                    # Optional declspec
+            (\w+)                                          # Name
+            (?:\s*:\s*(public|private|protected)?\s*([\w:,\s]+))?  # Inheritance
+            \s*\{
+        '''
+        
+        for match in re.finditer(class_pattern, content, re.MULTILINE | re.VERBOSE):
+            class_type = match.group(2)
+            name = match.group(3)
+            visibility = match.group(4) or ('public' if class_type == 'struct' else 'private')
+            extends = [b.strip() for b in match.group(5).split(',')] if match.group(5) else []
+            
+            line_start = content[:match.start()].count('\n') + 1
+            
+            class_info = MultiLangClassInfo(
+                name=name,
+                language='cpp' if '.cpp' in file_path or '.hpp' in file_path else 'c',
+                file_path=file_path,
+                line_start=line_start,
+                line_end=line_start + 100,
+                methods=[],
+                fields=[],
+                extends=extends,
+                implements=[],
+                docstring=CppParser._extract_comment(content, match.start()),
+                visibility=visibility,
+                is_abstract=False,
+                annotations=[]
+            )
+            classes.append(class_info)
+        
+        return classes
+
+
 class BashParser:
     """Parse Bash/Shell scripts"""
     
@@ -440,6 +841,9 @@ class MultiLanguageAnalyzer:
             'python': PythonParser,
             'javascript': JavaScriptParser,
             'typescript': JavaScriptParser,
+            'java': JavaParser,
+            'c': CppParser,
+            'cpp': CppParser,
             'bash': BashParser,
         }
     
