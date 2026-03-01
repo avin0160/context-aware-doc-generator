@@ -485,13 +485,14 @@ Generate the architecture analysis:"""
         classes_summary = []
         
         file_analysis = code_analysis.get('file_analysis', {})
-        for file_path, file_info in list(file_analysis.items())[:15]:
-            for func in file_info.get('functions', [])[:10]:
+        # Process ALL files for comprehensive documentation (no limits)
+        for file_path, file_info in file_analysis.items():
+            for func in file_info.get('functions', []):
                 if hasattr(func, 'name'):
                     functions_summary.append(f"- {func.name}({', '.join(func.args[:3])})")
                 elif isinstance(func, dict):
                     functions_summary.append(f"- {func.get('name', 'unknown')}")
-            for cls in file_info.get('classes', [])[:5]:
+            for cls in file_info.get('classes', []):
                 if hasattr(cls, 'name'):
                     classes_summary.append(f"- {cls.name}")
                 elif isinstance(cls, dict):
@@ -516,13 +517,15 @@ PROJECT STATISTICS:
 - Functions: {code_analysis.get('complexity_metrics', {}).get('total_functions', 0)}
 - Classes: {code_analysis.get('complexity_metrics', {}).get('total_classes', 0)}
 - Project Type: {code_analysis.get('project_type', 'Unknown')}
-- Technologies: {', '.join(code_analysis.get('key_technologies', [])[:10])}
+- Technologies: {', '.join(code_analysis.get('key_technologies', []))}
 
-KEY FUNCTIONS:
-{chr(10).join(functions_summary[:20]) if functions_summary else "Various utility functions"}
+KEY FUNCTIONS ({len(functions_summary)} total):
+{chr(10).join(functions_summary[:50]) if functions_summary else "Various utility functions"}
+{f'... and {len(functions_summary) - 50} more functions' if len(functions_summary) > 50 else ''}
 
-KEY CLASSES:
-{chr(10).join(classes_summary[:10]) if classes_summary else "Standard Python structures"}
+KEY CLASSES ({len(classes_summary)} total):
+{chr(10).join(classes_summary[:30]) if classes_summary else "Standard Python structures"}
+{f'... and {len(classes_summary) - 30} more classes' if len(classes_summary) > 30 else ''}
 
 {f"ADDITIONAL CONTEXT:{chr(10)}{project_context[:3000]}" if project_context else ""}
 

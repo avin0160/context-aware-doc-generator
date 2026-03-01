@@ -459,41 +459,16 @@ class AdvancedRepositoryAnalyzer:
     def _generate_function_docstring(self, node: ast.FunctionDef, file_path: str, content: str, calls: List[str]) -> str:
         """Generate meaningful docstring based on function analysis
         
-        Uses Phi-3-Mini when available for research-quality documentation.
+        SKIP Phi-3 here - it's called per-function which is too slow!
+        Phi-3 is only used for final documentation generation, not individual functions.
         Falls back to intelligent analysis or rule-based generation.
         """
         func_name = node.name
         params = [arg.arg for arg in node.args.args if arg.arg != 'self']
         
-        # Try Phi-3 first for superior quality
-        if self.phi3_generator is not None:
-            try:
-                # Extract function code
-                function_lines = content.split('\n')[node.lineno-1:node.end_lineno] if hasattr(node, 'end_lineno') else []
-                function_code = '\n'.join(function_lines) if function_lines else f"def {func_name}({', '.join(params)}):\n    pass"
-                
-                # Prepare context
-                context = {
-                    'called_by': [],  # Could be enhanced with call graph analysis
-                    'calls': calls,
-                    'complexity': len(calls) + len(params) * 2,
-                    'file_path': file_path,
-                    'semantic_category': 'general'
-                }
-                
-                phi3_docstring = self.phi3_generator.generate_function_docstring(
-                    function_code=function_code,
-                    function_name=func_name,
-                    context=context,
-                    style="sphinx"
-                )
-                
-                # Use Phi-3 result if valid
-                if phi3_docstring and len(phi3_docstring) > 50:
-                    return phi3_docstring
-            except Exception as e:
-                # Fall back to traditional methods
-                pass
+        # SKIP Phi-3 per-function calls - too slow! 
+        # Phi-3 is used only for final documentation generation in generate_documentation()
+        # This dramatically speeds up analysis phase from minutes to seconds
         
         # Try intelligent analyzer next if available
         intelligent_analyzer = getattr(self.analyzer, 'intelligent_analyzer', None) if hasattr(self, 'analyzer') else None
