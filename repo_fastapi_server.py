@@ -18,6 +18,7 @@ from fastapi import FastAPI, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 import signal
 from contextlib import contextmanager
@@ -126,6 +127,15 @@ def lazy_load_advanced_system():
         ADVANCED_SYSTEM_AVAILABLE = False
 
 app = FastAPI(title="Advanced Documentation Generator (FIXED)", version="3.0.0")
+
+# Add CORS middleware for remote access via ngrok
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for ngrok access
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all methods (GET, POST, etc.)
+    allow_headers=["*"],  # Allow all headers
+)
 
 def install_fastapi_deps():
     """Install FastAPI dependencies"""
@@ -1707,6 +1717,12 @@ async def root():
                 const button = form.querySelector('.btn');
                 const originalText = button.textContent;
                 
+                // DEBUG: Log form data being sent
+                console.log('📤 Form Data Being Sent:');
+                for (let [key, value] of formData.entries()) {
+                    console.log(`  ${key}: ${value}`);
+                }
+                
                 button.textContent = 'PROCESSING...';
                 button.disabled = true;
                 
@@ -2004,17 +2020,25 @@ async def generate_docs(
     code_snippet: str = Form(""),
     input_type: str = Form("url"),
     context: str = Form(""), 
-    doc_style: str = Form("sphinx"),
+    doc_style: str = Form("technical_comprehensive"),
     temperature: float = Form(0.3),
     generation_mode: str = Form("rule_based")
 ):
     """Generate documentation for repository from Git URL, ZIP, or code snippet"""
     global doc_generator
     
-    # DEBUG: Log received style, temperature, and mode
-    print(f"📝 Received doc_style: '{doc_style}'")
-    print(f"🌡️ Received temperature: {temperature}")
-    print(f"⚙️ Received generation_mode: '{generation_mode}'")
+    # DEBUG: Log ALL received parameters for debugging remote access
+    print(f"\n{'='*60}")
+    print(f"📥 INCOMING REQUEST")
+    print(f"{'='*60}")
+    print(f"📝 doc_style: '{doc_style}'")
+    print(f"🌡️ temperature: {temperature}")
+    print(f"⚙️ generation_mode: '{generation_mode}'")
+    print(f"📋 input_type: '{input_type}'")
+    print(f"🔗 repo_url: '{repo_url[:100] if repo_url else '(empty)'}'")
+    print(f"📄 code_snippet: {'(provided, ' + str(len(code_snippet)) + ' chars)' if code_snippet else '(empty)'}")
+    print(f"💬 context: '{context[:50] if context else '(empty)'}'")
+    print(f"{'='*60}\n")
     
     # Validate and normalize style
     valid_styles = ['opensource', 'technical_comprehensive', 'user_guide']
@@ -2028,12 +2052,23 @@ async def generate_docs(
         # Handle different input types
         repo_path = None
         
+        # Check if both inputs are empty (might happen with remote access)
+        if input_type == "url" and not repo_url.strip():
+            print(f"⚠️ URL mode selected but no URL provided")
+            return JSONResponse({
+                "error": "No repository URL provided",
+                "status": "❌ Empty URL",
+                "help": "Please enter a Git URL (e.g., https://github.com/user/repo) or switch to Code Snippet mode"
+            })
+        
         if input_type == "code":
             # Handle code snippet input
             if not code_snippet.strip():
+                print(f"⚠️ Code mode selected but no code provided")
                 return JSONResponse({
                     "error": "No code provided",
-                    "status": "❌ Empty code snippet"
+                    "status": "❌ Empty code snippet",
+                    "help": "Please paste your code or switch to URL mode"
                 })
             
             print(f"🔄 Processing code snippet ({len(code_snippet)} characters)...")
@@ -2066,13 +2101,9 @@ async def generate_docs(
         
         else:
             # Handle URL input (existing logic)
-            if not repo_url.strip():
-                return JSONResponse({
-                    "error": "No repository URL provided",
-                    "status": "❌ Empty URL"
-                })
+            # Note: Empty URL already checked above
             
-            if repo_url.startswith(('http://', 'https://')) and ('github.com' in repo_url or 'gitlab.com' in repo_url):
+            if repo_url.startswith(('http://', 'https://')) and ('.git' in repo_url or 'github.com' in repo_url or 'gitlab.com' in repo_url or 'bitbucket.org' in repo_url or repo_url.endswith('.git')):
                 # Clone Git repository with shallow clone for speed
                 print(f"🔄 Cloning repository: {repo_url}")
                 print("   Using --depth=1 for faster cloning (shallow clone)")
@@ -2135,9 +2166,21 @@ async def generate_docs(
                 print(f"✅ Using local directory: {repo_path}")
             
             else:
+                # Better error message with details
+                print(f"❌ Validation failed for repo_url: '{repo_url}'")
+                print(f"   - Not a Git URL (checked for .git, github, gitlab, bitbucket)")
+                print(f"   - Not a ZIP file (checked .zip extension and file exists)")
+                print(f"   - Not a local directory (checked path exists)")
                 return JSONResponse({
                     "error": "Invalid repository source - must be Git URL, ZIP file, or local directory",
-                    "status": "❌ Invalid input"
+                    "status": "❌ Invalid input",
+                    "received": repo_url[:200] if repo_url else "(empty)",
+                    "valid_examples": [
+                        "https://github.com/username/repo.git",
+                        "https://github.com/username/repo",
+                        "C:\\path\\to\\local\\directory",
+                        "C:\\path\\to\\file.zip"
+                    ]
                 })
         
         # Try advanced system first
