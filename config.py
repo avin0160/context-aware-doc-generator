@@ -44,14 +44,14 @@ API_PORT = 8000
 
 # Gemini API Configuration
 # Get your API key from: https://makersuite.google.com/app/apikey
-GEMINI_API_KEY = "replace with your api key"  # Replace with your actual API key
+GEMINI_API_KEY = "YOUR_GEMINI_API_KEY_HERE"  # Replace with your actual API key
 GEMINI_MODEL = "models/gemini-2.5-flash"  # Using latest stable flash model
 GEMINI_TEMPERATURE = 0.4  # Slightly higher for more natural/human-like output
-GEMINI_MAX_TOKENS = 16384  # Max tokens for extensive comprehensive documentation
+GEMINI_MAX_TOKENS = 65536  # Max tokens for 50+ page comprehensive documentation (300,000 words target)
 
 # Gemini Human-Like Mode Configuration
 GEMINI_HUMAN_MODE_TEMPERATURE = 0.6  # More creative, conversational
-GEMINI_HUMAN_MODE_MAX_TOKENS = 32768  # Maximum for extensive documentation
+GEMINI_HUMAN_MODE_MAX_TOKENS = 65536  # Maximum for 50+ page extensive documentation
 
 # Phi-3 Model Configuration
 PHI3_MODEL = "microsoft/Phi-3-mini-4k-instruct"
@@ -66,9 +66,9 @@ TOP_K_RESULTS = 5
 CHUNK_SIZE = 512
 CHUNK_OVERLAP = 50
 
-# Documentation Styles
-DOC_STYLES = ["sphinx", "technical_comprehensive", "opensource"]
-DEFAULT_DOC_STYLE = "sphinx"  # Sphinx/reST API documentation
+# Documentation Styles (for markdown generation)
+DOC_STYLES = ["technical_comprehensive", "user_guide", "opensource"]
+DEFAULT_DOC_STYLE = "technical_comprehensive"  # User-friendly technical guide
 
 # Supported Languages
 SUPPORTED_LANGUAGES = {
