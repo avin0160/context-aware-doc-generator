@@ -3249,6 +3249,9 @@ async def generate_docs(
                         "note": csn_metrics.get('note', csn_metrics.get('reason', '')),
                         # Add comprehensive metrics for detailed display
                         "comprehensive": {
+                            "bleu_eq": f"{csn_metrics.get('bleu', 0):.4f}",
+                            "meteor_eq": f"{csn_metrics.get('meteor', 0):.4f}",
+                            "rouge_eq": f"{csn_metrics.get('rouge_l', 0):.4f}",
                             "lexical_diversity": f"{comprehensive_metrics.get('lexical_diversity', 0):.4f}",
                             "completeness": f"{comprehensive_metrics.get('evidence_coverage', 0):.4f}",
                             "consistency": f"{comprehensive_metrics.get('consistency', 0):.4f}",
@@ -3268,6 +3271,9 @@ async def generate_docs(
                         "overall": f"{metrics_results.get('aggregate_score', 0):.2%}",
                         # Add comprehensive metrics
                         "comprehensive": {
+                            "bleu_eq": f"{metrics_results.get('bleu', 0):.4f}",
+                            "meteor_eq": f"{metrics_results.get('meteor', 0):.4f}",
+                            "rouge_eq": f"{metrics_results.get('rouge', {}).get('rouge-l', {}).get('f', 0):.4f}",
                             "lexical_diversity": f"{comprehensive_metrics.get('lexical_diversity', 0):.4f}",
                             "completeness": f"{comprehensive_metrics.get('evidence_coverage', 0):.4f}",
                             "consistency": f"{comprehensive_metrics.get('consistency', 0):.4f}",
