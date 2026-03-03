@@ -9,6 +9,15 @@ import os
 import sys
 import subprocess
 import time
+
+# Fix Windows console encoding for Unicode/emojis
+if sys.platform == 'win32':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except:
+        pass  # Older Python versions
+
 import uvicorn
 import asyncio
 import tempfile
@@ -35,7 +44,6 @@ doc_generator = None
 rag_system = None
 
 # Metrics classes (imported lazily)
-SphinxEvaluator = None
 ComprehensiveEvaluator = None
 compute_codesearchnet_metrics = None
 get_codesearchnet_reference_corpus = None
@@ -46,7 +54,7 @@ print("⚡ Choose 'Gemini-only' mode for instant documentation without Phi-3")
 
 def lazy_load_metrics_only():
     """Load just the metrics modules (lightweight, no Phi-3)"""
-    global CODESEARCHNET_AVAILABLE, SphinxEvaluator, ComprehensiveEvaluator, compute_codesearchnet_metrics, get_codesearchnet_reference_corpus, evaluate_documentation_quality
+    global CODESEARCHNET_AVAILABLE, ComprehensiveEvaluator, compute_codesearchnet_metrics, get_codesearchnet_reference_corpus, evaluate_documentation_quality
     
     if CODESEARCHNET_AVAILABLE:
         return  # Already loaded
@@ -54,18 +62,16 @@ def lazy_load_metrics_only():
     try:
         print("📊 Loading metrics evaluation modules...")
         from evaluation_metrics import ComprehensiveEvaluator as CompEval
-        from sphinx_compliance_metrics import DocumentationEvaluator as SphinxEval
         from gemini_context_enhancer import compute_codesearchnet_metrics as csn_metrics_func, get_codesearchnet_reference_corpus as csn_corpus_func
         from real_quality_metrics import evaluate_documentation_quality as real_metrics_func
         
-        SphinxEvaluator = SphinxEval
         ComprehensiveEvaluator = CompEval
         compute_codesearchnet_metrics = csn_metrics_func
         get_codesearchnet_reference_corpus = csn_corpus_func
         evaluate_documentation_quality = real_metrics_func
         
         CODESEARCHNET_AVAILABLE = True
-        print("✅ Metrics modules loaded (Real quality metrics + heuristic scores)")
+        print("✅ Metrics modules loaded")
     except Exception as e:
         print(f"⚠️ Could not load metrics modules: {e}")
 
@@ -111,7 +117,7 @@ def lazy_load_rag_system():
 def lazy_load_advanced_system():
     """Load the heavy documentation system only when requested"""
     global doc_generator, rag_system, ADVANCED_SYSTEM_AVAILABLE, CODESEARCHNET_AVAILABLE
-    global SphinxEvaluator, ComprehensiveEvaluator, compute_codesearchnet_metrics, get_codesearchnet_reference_corpus, evaluate_documentation_quality
+    global ComprehensiveEvaluator, compute_codesearchnet_metrics, get_codesearchnet_reference_corpus, evaluate_documentation_quality
     
     if doc_generator is not None:
         return  # Already loaded
@@ -120,13 +126,11 @@ def lazy_load_advanced_system():
     try:
         from comprehensive_docs_advanced import DocumentationGenerator
         from evaluation_metrics import BLEUScore, ROUGEScore, METEORScore, CodeBLEU, ComprehensiveEvaluator as CompEval
-        from sphinx_compliance_metrics import DocumentationEvaluator as SphinxEval
         from technical_doc_metrics import TechnicalDocumentationEvaluator
         from gemini_context_enhancer import compute_codesearchnet_metrics as csn_metrics_func, get_codesearchnet_reference_corpus as csn_corpus_func
         from real_quality_metrics import evaluate_documentation_quality as real_metrics_func
         
         # Make available globally
-        SphinxEvaluator = SphinxEval
         ComprehensiveEvaluator = CompEval
         compute_codesearchnet_metrics = csn_metrics_func
         get_codesearchnet_reference_corpus = csn_corpus_func
@@ -163,7 +167,13 @@ def install_all_requirements():
     """Install ALL required dependencies from requirements.txt and ensure models are ready"""
     import os
     
-    print("\n📦 Checking and installing all requirements...")
+    # Quick check: If marker file exists, skip entirely (already set up)
+    marker_file = os.path.join(os.path.dirname(__file__), '.deps_installed')
+    if os.path.exists(marker_file):
+        print("✅ Dependencies already verified (skipping check)")
+        return True
+    
+    print("\n📦 First-time setup: Checking dependencies...")
     
     # Core packages to check/install
     required_packages = {
@@ -175,7 +185,7 @@ def install_all_requirements():
         'torch': 'torch',
         'sentence_transformers': 'sentence-transformers',
         'faiss': 'faiss-cpu',
-        'google.generativeai': 'google-generativeai',
+        'google.genai': 'google-genai',
         'bert_score': 'bert-score',
         'gitpython': 'gitpython',
         'requests': 'requests',
@@ -199,14 +209,22 @@ def install_all_requirements():
     else:
         print("✅ All required packages already installed")
     
-    # Check if requirements.txt exists and install from it
+    # Check if requirements.txt exists and install from it (only on first run)
     req_file = os.path.join(os.path.dirname(__file__), 'requirements.txt')
-    if os.path.exists(req_file):
-        print("📋 Verifying requirements.txt dependencies...")
+    if os.path.exists(req_file) and missing_packages:
+        print("📋 Installing from requirements.txt...")
         try:
             subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "-r", req_file])
         except:
             pass  # Silent fail - already handled core packages
+    
+    # Create marker file to skip this on future runs
+    try:
+        with open(marker_file, 'w') as f:
+            f.write('deps_installed')
+        print("✅ Setup complete (will skip on next run)")
+    except:
+        pass  # Non-critical if marker can't be written
     
     return True
 
@@ -885,25 +903,32 @@ Generate detailed documentation including:
     if generation_mode == "gemini_only":
         print(f"🤖 GEMINI-ONLY MODE: Using Google Gemini API directly (no Phi-3)")
         
-        # Load metrics modules (lightweight, no Phi-3 needed)
-        lazy_load_metrics_only()
+        # SKIP metrics and RAG loading for FAST generation - load after if needed
+        # lazy_load_metrics_only()  # Causes slowdown - skip for now
+        # lazy_load_rag_system()    # Causes slowdown - skip for now
         
-        # Load RAG system for semantic code search (independent of Phi-3)
-        lazy_load_rag_system()
-        
-        # Build FAISS index if RAG loaded but not trained yet
-        if rag_system and not rag_system.is_trained:
-            print("🔨 Building FAISS index for semantic code retrieval...")
-            build_rag_index_from_files(file_contents, repo_path)
-        elif rag_system and rag_system.is_trained:
-            print("✅ RAG: Using existing FAISS index")
+        # Skip FAISS index building for speed
+        # if rag_system and not rag_system.is_trained:
+        #     print("🔨 Building FAISS index for semantic code retrieval...")
+        #     build_rag_index_from_files(file_contents, repo_path)
+        # elif rag_system and rag_system.is_trained:
+        #     print("✅ RAG: Using existing FAISS index")
         
         try:
             # Direct Gemini path - skip all heavyweight modules
+            print("📦 Importing Gemini module...")
+            import sys
+            sys.stdout.flush()
             from gemini_context_enhancer import GeminiContextEnhancer
+            print("✅ Gemini module imported")
+            sys.stdout.flush()
             import config
             
+            print("🔧 Initializing Gemini...")
+            sys.stdout.flush()
             gemini = GeminiContextEnhancer()
+            print(f"✅ Gemini initialized, available={gemini.available}")
+            sys.stdout.flush()
             if not gemini.available:
                 print("❌ Gemini not available - using fallback")
                 return generate_basic_repository_analysis(file_contents, context, doc_style, repo_path)
@@ -915,30 +940,13 @@ Generate detailed documentation including:
                 # Include substantial content from each file (up to 5000 chars for better context)
                 combined_content += f"# File: {file_path}\n{content[:5000]}\n\n"
             
-            # === RAG ENHANCEMENT: Get relevant context for better documentation ===
+            # Skip RAG enhancement for FAST documentation generation
             rag_context_section = ""
-            if rag_system and rag_system.is_trained:
-                # Query RAG for relevant code patterns related to the project's main functionality
-                main_query = combined_content[:1000]  # Use first 1000 chars as query
-                rag_results = rag_system.search(main_query, k=3)
-                if rag_results:
-                    relevant_contexts = []
-                    for r in rag_results:
-                        if r['score'] > 0.25:  # Only include relevant matches
-                            chunk = r['chunk']
-                            relevant_contexts.append(
-                                f"[{chunk['type'].upper()}] {chunk['metadata'].get('name', 'Unknown')} "
-                                f"(similarity: {r['score']:.2f})\n{chunk['content'][:300]}..."
-                            )
-                    if relevant_contexts:
-                        rag_context_section = f"""
-
-[RAG-RETRIEVED RELATED CODE CONTEXT]
-The following related code elements provide context for documentation:
-{''.join(relevant_contexts[:3])}
-Use this context to ensure consistent documentation style and accurate descriptions.
-"""
-                        print(f"📚 RAG: Injected {len(relevant_contexts)} related code contexts into prompt")
+            # RAG disabled for speed - uncomment to enable semantic code context
+            # if rag_system and rag_system.is_trained:
+            #     main_query = combined_content[:1000]
+            #     rag_results = rag_system.search(main_query, k=3)
+            #     ... RAG context injection code ...
             
             # Build style-specific prompts
             if doc_style == 'technical_comprehensive':
@@ -1726,8 +1734,109 @@ def calculate_comprehensive_metrics(result: str, context: str) -> dict:
             }
         }
 
+def _generate_tautological_description(name: str, signature: str, element_type: str = "function") -> str:
+    """Generate a meaningful tautological description from function/class name and signature.
+    
+    This creates human-readable descriptions based on naming conventions.
+    """
+    import re
+    
+    # Clean up the name
+    clean_name = name.replace('_', ' ').replace('-', ' ')
+    
+    # Extract words from camelCase/PascalCase
+    words = re.findall(r'[A-Z]?[a-z]+|[A-Z]+(?=[A-Z][a-z]|\d|\W|$)|\d+', clean_name)
+    words = [w.lower() for w in words if w]
+    
+    if not words:
+        words = [name.lower()]
+    
+    # Common verb patterns and their descriptions
+    verb_descriptions = {
+        'get': ('retrieves', 'Returns the requested'),
+        'set': ('sets', 'Assigns a value to'),
+        'create': ('creates', 'Instantiates a new'),
+        'delete': ('deletes', 'Removes the specified'),
+        'remove': ('removes', 'Eliminates the specified'),
+        'add': ('adds', 'Appends or inserts'),
+        'update': ('updates', 'Modifies the existing'),
+        'init': ('initializes', 'Sets up the initial state of'),
+        'initialize': ('initializes', 'Sets up the initial state of'),
+        'load': ('loads', 'Reads and processes'),
+        'save': ('saves', 'Persists data to'),
+        'process': ('processes', 'Handles and transforms'),
+        'handle': ('handles', 'Manages and responds to'),
+        'parse': ('parses', 'Analyzes and extracts data from'),
+        'validate': ('validates', 'Checks the validity of'),
+        'check': ('checks', 'Verifies the state or condition of'),
+        'calculate': ('calculates', 'Computes the value of'),
+        'compute': ('computes', 'Determines the result of'),
+        'convert': ('converts', 'Transforms the format of'),
+        'format': ('formats', 'Structures the output of'),
+        'build': ('builds', 'Constructs and assembles'),
+        'run': ('runs', 'Executes the main logic of'),
+        'start': ('starts', 'Begins the execution of'),
+        'stop': ('stops', 'Terminates the execution of'),
+        'find': ('finds', 'Searches for and returns'),
+        'search': ('searches', 'Looks for matching'),
+        'filter': ('filters', 'Selects items matching criteria in'),
+        'sort': ('sorts', 'Orders the elements of'),
+        'render': ('renders', 'Generates visual output for'),
+        'draw': ('draws', 'Creates visual representation of'),
+        'display': ('displays', 'Shows the content of'),
+        'send': ('sends', 'Transmits data to'),
+        'receive': ('receives', 'Accepts incoming data from'),
+        'connect': ('connects', 'Establishes a connection to'),
+        'disconnect': ('disconnects', 'Closes the connection to'),
+        'read': ('reads', 'Retrieves data from'),
+        'write': ('writes', 'Outputs data to'),
+        'open': ('opens', 'Initiates access to'),
+        'close': ('closes', 'Terminates access to'),
+        'main': ('serves as', 'The primary entry point that'),
+        'test': ('tests', 'Verifies the functionality of'),
+        'is': ('checks if', 'Returns a boolean indicating whether'),
+        'has': ('checks if', 'Returns whether the object has'),
+        'can': ('determines if', 'Returns whether the operation can'),
+    }
+    
+    # Extract parameters from signature
+    params = []
+    if '(' in signature and ')' in signature:
+        param_str = signature[signature.find('(')+1:signature.rfind(')')]
+        params = [p.strip().split(':')[0].split('=')[0].strip() for p in param_str.split(',') if p.strip() and p.strip() != 'self']
+    
+    # Generate description
+    first_word = words[0] if words else ''
+    rest_words = ' '.join(words[1:]) if len(words) > 1 else ''
+    
+    if element_type == "class":
+        if rest_words:
+            return f"A class that represents {rest_words}. Provides functionality for managing and processing {rest_words} data and operations."
+        else:
+            return f"A class that encapsulates {first_word} functionality. Manages state and provides methods for {first_word} operations."
+    
+    # Function description
+    if first_word in verb_descriptions:
+        verb, prefix = verb_descriptions[first_word]
+        subject = rest_words if rest_words else "the specified data"
+        desc = f"{prefix} {subject}."
+    else:
+        # Generic description
+        full_name = ' '.join(words)
+        desc = f"Performs the {full_name} operation."
+    
+    # Add parameter info
+    if params:
+        param_list = ', '.join(f'`{p}`' for p in params[:4])
+        desc += f" Takes {param_list} as input parameters."
+        if len(params) > 4:
+            desc += f" (and {len(params) - 4} more parameters)"
+    
+    return desc
+
+
 def generate_basic_repository_analysis(file_contents: dict, context: str, doc_style: str, repo_path: str):
-    """Fallback basic repository analysis"""
+    """Fallback basic repository analysis with tautological descriptions"""
     
     # Analyze the files
     total_lines = sum(len(content.split('\n')) for content in file_contents.values())
@@ -1784,32 +1893,95 @@ def generate_basic_repository_analysis(file_contents: dict, context: str, doc_st
                     classes.append(f"{file_path}: {stripped[:80]}")
     
     if doc_style == "google":
+        # Generate detailed function documentation with tautological descriptions
+        func_docs = []
+        for func in functions[:10]:  # Document up to 10 functions
+            file_path_part, sig = func.split(': ', 1) if ': ' in func else ('', func)
+            # Extract function name from signature
+            if '(' in sig:
+                func_name = sig.split('(')[0].replace('def ', '').replace('async def ', '').strip()
+            else:
+                func_name = sig.replace('def ', '').replace('async def ', '').strip()
+            
+            description = _generate_tautological_description(func_name, sig, "function")
+            func_docs.append(f"""### `{sig}`
+
+**Description:** {description}
+
+**Location:** `{file_path_part}`
+""")
+        
+        # Generate detailed class documentation
+        class_docs = []
+        for cls in classes[:10]:  # Document up to 10 classes
+            file_path_part, sig = cls.split(': ', 1) if ': ' in cls else ('', cls)
+            # Extract class name from signature
+            class_name = sig.replace('class ', '').split('(')[0].split(':')[0].strip()
+            
+            description = _generate_tautological_description(class_name, sig, "class")
+            class_docs.append(f"""### `{sig}`
+
+**Description:** {description}
+
+**Location:** `{file_path_part}`
+""")
+        
         return f"""# Repository Documentation (Google Style)
 
 ## Overview
-Repository: {os.path.basename(repo_path)}
-Context: {context or 'Comprehensive repository documentation'}
+
+**Repository:** {os.path.basename(repo_path)}
+
+**Purpose:** {context or 'This repository provides a comprehensive codebase for software development functionality.'}
+
+This documentation provides detailed information about the repository structure, functions, classes, and dependencies. The codebase consists of {len(file_contents)} files with a total of {total_lines:,} lines of code.
 
 ## Repository Statistics
-- Files analyzed: {len(file_contents)}
-- Total lines: {total_lines}
-- Functions found: {len(functions)}
-- Classes found: {len(classes)}
+
+| Metric | Value |
+|--------|-------|
+| Files analyzed | {len(file_contents)} |
+| Total lines | {total_lines:,} |
+| Functions found | {len(functions)} |
+| Classes found | {len(classes)} |
 
 ## File Structure
-{chr(10).join(f"- `{file_path}`" for file_path in file_contents.keys())}
+
+The repository is organized with the following file structure:
+
+{chr(10).join(f"- `{file_path}` - Source file containing implementation code" for file_path in file_contents.keys())}
 
 ## Functions
-{chr(10).join(f"### {func.split(': ', 1)[1] if ': ' in func else func}" for func in functions[:5])}
 
-## Classes  
-{chr(10).join(f"### {cls.split(': ', 1)[1] if ': ' in cls else cls}" for cls in classes[:5])}
+This section documents the main functions available in the codebase.
+
+{chr(10).join(func_docs) if func_docs else "No functions documented."}
+
+## Classes
+
+This section documents the classes defined in the codebase.
+
+{class_docs[0] if class_docs else "No classes documented."}
+{chr(10).join(class_docs[1:]) if len(class_docs) > 1 else ""}
 
 ## Dependencies
-{chr(10).join(f"- `{imp}`" for imp in list(set(imports))[:10])}
+
+The following external dependencies are used by this project:
+
+{chr(10).join(f"- `{imp}` - External module dependency" for imp in list(set(imports))[:15])}
+
+## Usage
+
+To use this repository, import the required modules and call the appropriate functions or instantiate the classes as needed.
+
+```python
+# Example usage
+from {os.path.basename(repo_path).replace('-', '_')} import main_module
+# Initialize and use the functionality
+```
 
 ---
-*Generated by Context-Aware Documentation Generator*"""
+*Documentation generated with tautological analysis by Context-Aware Documentation Generator*"""
     
     elif doc_style == "user_guide":
         # User-focused documentation
@@ -2073,88 +2245,198 @@ Want to contribute? Check out:
 """
     
     elif doc_style == "numpy":
-        return f"""# Repository Documentation (Google Style)
+        # Generate detailed function documentation with tautological descriptions
+        func_docs = []
+        for func in functions[:10]:
+            file_path_part, sig = func.split(': ', 1) if ': ' in func else ('', func)
+            if '(' in sig:
+                func_name = sig.split('(')[0].replace('def ', '').replace('async def ', '').strip()
+            else:
+                func_name = sig.replace('def ', '').replace('async def ', '').strip()
+            description = _generate_tautological_description(func_name, sig, "function")
+            func_docs.append(f"""#### `{sig}`
 
-## Overview
-Repository: {os.path.basename(repo_path)}
-Context: {context or 'Comprehensive repository documentation'}
+{description}
 
-## Repository Statistics
-- Files analyzed: {len(file_contents)}
-- Total lines: {total_lines}
-- Functions found: {len(functions)}
-- Classes found: {len(classes)}
+Parameters
+----------
+See function signature for parameter details.
 
-## File Structure
-{chr(10).join(f"- `{file_path}`" for file_path in file_contents.keys())}
+Returns
+-------
+Result of the {func_name} operation.
 
-## Functions
-{chr(10).join(f"### {func.split(': ', 1)[1] if ': ' in func else func}" for func in functions[:5])}
+Location: `{file_path_part}`
+""")
+        
+        # Generate detailed class documentation
+        class_docs = []
+        for cls in classes[:10]:
+            file_path_part, sig = cls.split(': ', 1) if ': ' in cls else ('', cls)
+            class_name = sig.replace('class ', '').split('(')[0].split(':')[0].strip()
+            description = _generate_tautological_description(class_name, sig, "class")
+            class_docs.append(f"""#### `{sig}`
 
-## Classes  
-{chr(10).join(f"### {cls.split(': ', 1)[1] if ': ' in cls else cls}" for cls in classes[:5])}
+{description}
 
-## Dependencies
-{chr(10).join(f"- `{imp}`" for imp in list(set(imports))[:10])}
+Attributes
+----------
+See class definition for attribute details.
 
----
-*Generated by Context-Aware Documentation Generator*"""
-    
-    elif doc_style == "numpy":
+Methods
+-------
+See class implementation for available methods.
+
+Location: `{file_path_part}`
+""")
+        
         return f"""# Repository Documentation (NumPy Style)
 
-## Overview
+Overview
+========
+
 Repository: {os.path.basename(repo_path)}
-Context: {context or 'Comprehensive repository documentation'}
 
-## Repository Statistics
-- Files analyzed: {len(file_contents)}
-- Total lines: {total_lines}  
-- Functions found: {len(functions)}
-- Classes found: {len(classes)}
+Purpose
+-------
+{context or 'This repository provides a comprehensive codebase for software development functionality.'}
 
-## File Structure
-{chr(10).join(f"- `{file_path}`" for file_path in file_contents.keys())}
+This documentation provides detailed information about the repository structure, functions,
+classes, and dependencies following NumPy documentation conventions.
 
-## Functions
-{chr(10).join(f"### {func.split(': ', 1)[1] if ': ' in func else func}" for func in functions[:5])}
+Repository Statistics
+--------------------
 
-## Classes
-{chr(10).join(f"### {cls.split(': ', 1)[1] if ': ' in cls else cls}" for cls in classes[:5])}
+===================  =======
+Metric               Value
+===================  =======
+Files analyzed       {len(file_contents)}
+Total lines          {total_lines:,}
+Functions found      {len(functions)}
+Classes found        {len(classes)}
+===================  =======
 
-## Dependencies
-{chr(10).join(f"- `{imp}`" for imp in list(set(imports))[:10])}
+File Structure
+--------------
+
+The repository contains the following files:
+
+{chr(10).join(f"* `{file_path}` - Implementation source file" for file_path in file_contents.keys())}
+
+Functions
+=========
+
+{chr(10).join(func_docs) if func_docs else "No functions documented."}
+
+Classes
+=======
+
+{chr(10).join(class_docs) if class_docs else "No classes documented."}
+
+Dependencies
+============
+
+The following external packages are required:
+
+{chr(10).join(f"* `{imp}`" for imp in list(set(imports))[:15])}
+
+Notes
+-----
+This documentation was generated using tautological analysis based on function
+and class naming conventions.
 
 ---
-*Generated by Context-Aware Documentation Generator*"""
+*Documentation generated with tautological analysis by Context-Aware Documentation Generator*
+*Style: NumPy (Scientific Python)*"""
     
-    else:  # markdown
+    else:  # markdown / default / technical_comprehensive
+        # Generate detailed function documentation with tautological descriptions
+        func_docs = []
+        for func in functions[:15]:  # Document up to 15 functions for default
+            file_path_part, sig = func.split(': ', 1) if ': ' in func else ('', func)
+            if '(' in sig:
+                func_name = sig.split('(')[0].replace('def ', '').replace('async def ', '').strip()
+            else:
+                func_name = sig.replace('def ', '').replace('async def ', '').strip()
+            description = _generate_tautological_description(func_name, sig, "function")
+            func_docs.append(f"""### `{sig}`
+
+{description}
+
+**File:** `{file_path_part}`
+""")
+        
+        # Generate detailed class documentation
+        class_docs = []
+        for cls in classes[:15]:
+            file_path_part, sig = cls.split(': ', 1) if ': ' in cls else ('', cls)
+            class_name = sig.replace('class ', '').split('(')[0].split(':')[0].strip()
+            description = _generate_tautological_description(class_name, sig, "class")
+            class_docs.append(f"""### `{sig}`
+
+{description}
+
+**File:** `{file_path_part}`
+""")
+        
         return f"""# Repository Documentation
 
 ## Overview
-**Repository:** {os.path.basename(repo_path)}  
-**Context:** {context or 'Comprehensive repository documentation'}
+
+**Repository:** {os.path.basename(repo_path)}
+
+**Purpose:** {context or 'This repository provides a comprehensive codebase implementing various software development functionality and utilities.'}
+
+This documentation provides a comprehensive overview of the repository structure, all functions, classes, and their relationships to help developers understand and utilize the codebase effectively.
 
 ## Repository Statistics
-- **Files analyzed:** {len(file_contents)}
-- **Total lines:** {total_lines}
-- **Functions found:** {len(functions)}
-- **Classes found:** {len(classes)}
+
+| Metric | Count |
+|--------|-------|
+| **Files analyzed** | {len(file_contents)} |
+| **Total lines** | {total_lines:,} |
+| **Functions** | {len(functions)} |
+| **Classes** | {len(classes)} |
 
 ## File Structure
-{chr(10).join(f"- `{file_path}`" for file_path in file_contents.keys())}
+
+The repository is organized as follows:
+
+{chr(10).join(f"- **`{file_path}`** - Source implementation file" for file_path in file_contents.keys())}
 
 ## Functions
-{chr(10).join(f"### `{func.split(': ', 1)[1] if ': ' in func else func}`" for func in functions[:5])}
+
+The following functions are implemented in this repository:
+
+{chr(10).join(func_docs) if func_docs else "No functions found in the codebase."}
 
 ## Classes
-{chr(10).join(f"### `{cls.split(': ', 1)[1] if ': ' in cls else cls}`" for cls in classes[:5])}
+
+The following classes are defined in this repository:
+
+{chr(10).join(class_docs) if class_docs else "No classes found in the codebase."}
 
 ## Dependencies
-{chr(10).join(f"- `{imp}`" for imp in list(set(imports))[:10])}
+
+This project depends on the following modules:
+
+{chr(10).join(f"- **`{imp}`** - External dependency" for imp in list(set(imports))[:20])}
+
+## Getting Started
+
+To use this repository:
+
+1. Clone the repository
+2. Install dependencies: `pip install -r requirements.txt`
+3. Import the required modules in your code
+
+```python
+# Example import
+from {os.path.basename(repo_path).replace('-', '_')} import main_module
+```
 
 ---
-*Generated by Context-Aware Documentation Generator*"""
+*Documentation generated with tautological analysis by Context-Aware Documentation Generator*"""
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
@@ -2265,13 +2547,22 @@ async def root():
             .radio-group label { 
                 display: flex; align-items: center; cursor: pointer;
                 text-transform: none; font-weight: normal;
+                padding: 8px 12px; border-radius: 4px; transition: all 0.2s;
             }
             .radio-group label:hover {
-                color: #ff0000;
+                color: #2e7d32; background: #e8f5e9;
             }
             .radio-group input[type="radio"] { 
-                margin-right: 8px; width: auto;
-                accent-color: #ffffff;
+                margin-right: 8px; width: 18px; height: 18px;
+                accent-color: #2e7d32;
+                cursor: pointer;
+            }
+            .radio-group input[type="radio"]:checked + span,
+            .radio-group input[type="radio"]:checked ~ span {
+                color: #2e7d32; font-weight: bold;
+            }
+            .radio-group label:has(input:checked) {
+                background: #c8e6c9; border: 2px solid #2e7d32;
             }
             .error { color: #ff0000; }
             .success { color: #00ff00; }
@@ -2298,16 +2589,33 @@ async def root():
             }
             #result {
                 margin-top: 30px; padding: 20px;
-                background: #f9f9f9; border-left: 3px solid #1a1a1a;
+                background: #e8ffe8; border-left: 5px solid #00aa00;
+                border: 2px solid #00aa00;
+                border-radius: 8px;
             }
             .doc-output {
                 background: #ffffff; padding: 20px; 
                 color: #1a1a1a; font-family: 'Segoe UI', Tahoma, Geneva, sans-serif;
                 max-height: 600px; overflow-y: auto;
                 border: 1px solid #ddd; margin: 15px 0;
-                white-space: pre-wrap; word-wrap: break-word;
-                font-size: 13px; line-height: 1.6;
+                font-size: 14px; line-height: 1.7;
             }
+            /* Markdown styles */
+            .doc-output h1 { font-size: 1.8em; border-bottom: 2px solid #333; padding-bottom: 8px; margin: 20px 0 15px 0; }
+            .doc-output h2 { font-size: 1.5em; border-bottom: 1px solid #ddd; padding-bottom: 6px; margin: 18px 0 12px 0; color: #2c3e50; }
+            .doc-output h3 { font-size: 1.25em; margin: 15px 0 10px 0; color: #34495e; }
+            .doc-output h4 { font-size: 1.1em; margin: 12px 0 8px 0; color: #555; }
+            .doc-output p { margin: 10px 0; }
+            .doc-output code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Consolas', monospace; font-size: 0.9em; }
+            .doc-output pre { background: #2d2d2d; color: #f8f8f2; padding: 15px; border-radius: 6px; overflow-x: auto; margin: 15px 0; }
+            .doc-output pre code { background: none; color: inherit; padding: 0; }
+            .doc-output ul, .doc-output ol { margin: 10px 0; padding-left: 25px; }
+            .doc-output li { margin: 5px 0; }
+            .doc-output blockquote { border-left: 4px solid #3498db; margin: 15px 0; padding: 10px 20px; background: #f9f9f9; }
+            .doc-output table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+            .doc-output th, .doc-output td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+            .doc-output th { background: #f5f5f5; font-weight: bold; }
+            .doc-output hr { border: none; border-top: 1px solid #ddd; margin: 20px 0; }
             .slider-container {
                 display: flex; align-items: center; gap: 15px;
                 margin-top: 10px;
@@ -2352,6 +2660,7 @@ async def root():
                 font-size: 0.95em;
             }
         </style>
+        <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
         <script>
             function selectStyle(style) {
                 document.querySelectorAll('.style-option').forEach(el => el.classList.remove('selected'));
@@ -2575,9 +2884,11 @@ async def root():
                             ${metricsHTML}
                             <h3 class="success">SUCCESS: ${result.status}</h3>
                             <p style="color: #888; margin: 10px 0;">Method: ${result.method} | Style: ${result.style || 'N/A'}</p>
-                            <div class="doc-output">${result.documentation}</div>
+                            <div class="doc-output" id="doc-content"></div>
                             <button onclick="downloadDocs('${result.style || 'markdown'}')" class="btn" style="width: auto; padding: 10px 20px;">DOWNLOAD</button>
                         `;
+                        // Render markdown after setting innerHTML
+                        document.getElementById('doc-content').innerHTML = marked.parse(result.documentation);
                     }
                     
                     resultDiv.scrollIntoView({ behavior: 'smooth' });
@@ -2607,7 +2918,7 @@ async def root():
         <div class="container">
             <div class="header">
                 <h1>CONTEXT-AWARE DOCUMENTATION GENERATOR</h1>
-                <p class="subtitle">&gt; Real Code Analysis - Minimal Interface</p>
+                <p class="subtitle">&gt; Real Code Analysis</p>
             </div>
             
             <form onsubmit="generateDocs(event)">
@@ -2977,24 +3288,21 @@ async def generate_docs(
                 print("="*60)
                 
                 # Declare globals for metrics modules
-                global SphinxEvaluator, ComprehensiveEvaluator, compute_codesearchnet_metrics
+                global ComprehensiveEvaluator, compute_codesearchnet_metrics
                 
                 # Load metrics modules if not already loaded
-                if SphinxEvaluator is None or ComprehensiveEvaluator is None:
+                if ComprehensiveEvaluator is None:
                     print("⏳ Loading metrics evaluation modules...")
                     try:
-                        from sphinx_compliance_metrics import DocumentationEvaluator as SphinxEval
                         from evaluation_metrics import ComprehensiveEvaluator as CompEval
                         from gemini_context_enhancer import compute_codesearchnet_metrics as csn_func
                         
                         # Make available for this session
-                        SphinxEvaluator = SphinxEval
                         ComprehensiveEvaluator = CompEval
                         compute_codesearchnet_metrics = csn_func
                         print("✅ Metrics modules loaded")
                     except Exception as import_err:
                         print(f"⚠️ Could not load all metrics modules: {import_err}")
-                        SphinxEvaluator = None
                         ComprehensiveEvaluator = None
                         compute_codesearchnet_metrics = None
                 
@@ -3231,31 +3539,45 @@ async def generate_docs(
                     "style": doc_style
                 }
                 
+                # Helper to normalize scores to 0-1 range
+                def normalize_score(score, max_expected=1.0):
+                    """Ensure score is in 0-1 range"""
+                    if score is None:
+                        return 0.0
+                    score = float(score)
+                    if score > max_expected:
+                        # Score might be in percentage form, normalize
+                        score = score / 100.0
+                    return max(0.0, min(1.0, score))
+                
                 # ALWAYS include COMPREHENSIVE metrics in response for UI display
                 if csn_metrics:
-                    overall_score = csn_metrics.get('overall', 0)
+                    overall_score = normalize_score(csn_metrics.get('overall', 0))
                     validity = csn_metrics.get('validity', 'valid')
                     if overall_score == 0 and validity != 'invalid':
-                        # Calculate if not provided
-                        overall_score = (csn_metrics.get('bleu', 0) + csn_metrics.get('meteor', 0) + csn_metrics.get('rouge_l', 0)) / 3
+                        # Calculate if not provided - all individual scores are 0-1
+                        bleu = normalize_score(csn_metrics.get('bleu', 0))
+                        meteor = normalize_score(csn_metrics.get('meteor', 0))
+                        rouge = normalize_score(csn_metrics.get('rouge_l', 0))
+                        overall_score = (bleu + meteor + rouge) / 3
                     
                     response_data["metrics"] = {
-                        "bleu": f"{csn_metrics.get('bleu', 0):.4f}",
-                        "meteor": f"{csn_metrics.get('meteor', 0):.4f}",
-                        "rouge_l": f"{csn_metrics.get('rouge_l', 0):.4f}",
+                        "bleu": f"{normalize_score(csn_metrics.get('bleu', 0)):.4f}",
+                        "meteor": f"{normalize_score(csn_metrics.get('meteor', 0)):.4f}",
+                        "rouge_l": f"{normalize_score(csn_metrics.get('rouge_l', 0)):.4f}",
                         "overall": f"{overall_score:.2%}",
                         "validity": validity,
                         "reference": "Heuristic Pattern Analysis" if validity == 'valid' else "Invalid - No code elements detected",
                         "note": csn_metrics.get('note', csn_metrics.get('reason', '')),
                         # Add comprehensive metrics for detailed display
                         "comprehensive": {
-                            "bleu_eq": f"{csn_metrics.get('bleu', 0):.4f}",
-                            "meteor_eq": f"{csn_metrics.get('meteor', 0):.4f}",
-                            "rouge_eq": f"{csn_metrics.get('rouge_l', 0):.4f}",
-                            "lexical_diversity": f"{comprehensive_metrics.get('lexical_diversity', 0):.4f}",
-                            "completeness": f"{comprehensive_metrics.get('evidence_coverage', 0):.4f}",
-                            "consistency": f"{comprehensive_metrics.get('consistency', 0):.4f}",
-                            "brevity": f"{comprehensive_metrics.get('brevity', 0):.4f}",
+                            "bleu_eq": f"{normalize_score(csn_metrics.get('bleu', 0)):.4f}",
+                            "meteor_eq": f"{normalize_score(csn_metrics.get('meteor', 0)):.4f}",
+                            "rouge_eq": f"{normalize_score(csn_metrics.get('rouge_l', 0)):.4f}",
+                            "lexical_diversity": f"{normalize_score(comprehensive_metrics.get('lexical_diversity', 0)):.4f}",
+                            "completeness": f"{normalize_score(comprehensive_metrics.get('evidence_coverage', 0)):.4f}",
+                            "consistency": f"{normalize_score(comprehensive_metrics.get('consistency', 0)):.4f}",
+                            "brevity": f"{normalize_score(comprehensive_metrics.get('brevity', 0)):.4f}",
                             "word_count": comprehensive_metrics.get('word_count', 0),
                             "unique_words": comprehensive_metrics.get('unique_words', 0),
                             "sentences": comprehensive_metrics.get('total_sentences', 0),
@@ -3264,20 +3586,22 @@ async def generate_docs(
                         }
                     }
                 elif metrics_results:
+                    # Normalize aggregate_score to ensure consistent 0-1 range
+                    agg_score = normalize_score(metrics_results.get('aggregate_score', 0))
                     response_data["metrics"] = {
-                        "bleu": f"{metrics_results.get('bleu', 0):.4f}",
-                        "meteor": f"{metrics_results.get('meteor', 0):.4f}",
-                        "rouge_l": f"{metrics_results.get('rouge', {}).get('rouge-l', {}).get('f', 0):.4f}",
-                        "overall": f"{metrics_results.get('aggregate_score', 0):.2%}",
+                        "bleu": f"{normalize_score(metrics_results.get('bleu', 0)):.4f}",
+                        "meteor": f"{normalize_score(metrics_results.get('meteor', 0)):.4f}",
+                        "rouge_l": f"{normalize_score(metrics_results.get('rouge', {}).get('rouge-l', {}).get('f', 0)):.4f}",
+                        "overall": f"{agg_score:.2%}",
                         # Add comprehensive metrics
                         "comprehensive": {
-                            "bleu_eq": f"{metrics_results.get('bleu', 0):.4f}",
-                            "meteor_eq": f"{metrics_results.get('meteor', 0):.4f}",
-                            "rouge_eq": f"{metrics_results.get('rouge', {}).get('rouge-l', {}).get('f', 0):.4f}",
-                            "lexical_diversity": f"{comprehensive_metrics.get('lexical_diversity', 0):.4f}",
-                            "completeness": f"{comprehensive_metrics.get('evidence_coverage', 0):.4f}",
-                            "consistency": f"{comprehensive_metrics.get('consistency', 0):.4f}",
-                            "brevity": f"{comprehensive_metrics.get('brevity', 0):.4f}",
+                            "bleu_eq": f"{normalize_score(metrics_results.get('bleu', 0)):.4f}",
+                            "meteor_eq": f"{normalize_score(metrics_results.get('meteor', 0)):.4f}",
+                            "rouge_eq": f"{normalize_score(metrics_results.get('rouge', {}).get('rouge-l', {}).get('f', 0)):.4f}",
+                            "lexical_diversity": f"{normalize_score(comprehensive_metrics.get('lexical_diversity', 0)):.4f}",
+                            "completeness": f"{normalize_score(comprehensive_metrics.get('evidence_coverage', 0)):.4f}",
+                            "consistency": f"{normalize_score(comprehensive_metrics.get('consistency', 0)):.4f}",
+                            "brevity": f"{normalize_score(comprehensive_metrics.get('brevity', 0)):.4f}",
                             "word_count": comprehensive_metrics.get('word_count', 0),
                             "unique_words": comprehensive_metrics.get('unique_words', 0),
                             "sentences": comprehensive_metrics.get('total_sentences', 0),
@@ -3592,31 +3916,12 @@ def start_server_with_tunnel():
     print("🌟 Starting Context-Aware Documentation Generator (Repository Edition)")
     print("=" * 70)
     
-    # Install ALL dependencies
-    try:
-        if not install_all_requirements():
-            print("⚠️ Some dependencies may be missing, but will try to continue...")
-    except Exception as e:
-        print(f"⚠️ Dependency installation error (non-critical): {e}")
+    # Skip preloading - models load on-demand for instant startup
+    print("⚡ Instant startup mode - models load on first request")
     
-    # Pre-load models for faster first request
-    try:
-        preload_models(preload_phi3=False, preload_rag=True)  # RAG is fast, Phi-3 is slow
-    except Exception as e:
-        print(f"⚠️ Model preload error (non-critical): {e}")
-    
+    # Skip ngrok entirely for faster local startup
     tunnel = None
-    try:
-        if not install_ngrok():
-            print("⚠️ Running without ngrok tunnel")
-        else:
-            if setup_ngrok_auth():
-                tunnel = create_tunnel(8000)
-            else:
-                tunnel = None
-    except Exception as e:
-        print(f"⚠️ Ngrok setup error (non-critical): {e}")
-        tunnel = None
+    print("⚠️ Ngrok disabled for instant startup - use localhost:8000")
     
     print("\n🚀 Starting Enhanced FastAPI server...")
     print("📂 Repository support: Git URLs, ZIP files, directories")

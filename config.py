@@ -47,7 +47,7 @@ API_PORT = 8000
 GEMINI_API_KEY = "YOUR_GEMINI_API_KEY_HERE"  # Replace with your actual API key
 GEMINI_MODEL = "models/gemini-2.5-flash"  # Using latest stable flash model
 GEMINI_TEMPERATURE = 0.4  # Slightly higher for more natural/human-like output
-GEMINI_MAX_TOKENS = 65536  # Max tokens for 50+ page comprehensive documentation (300,000 words target)
+GEMINI_MAX_TOKENS = 25000  # Good balance of detail and speed
 
 # Gemini Human-Like Mode Configuration
 GEMINI_HUMAN_MODE_TEMPERATURE = 0.6  # More creative, conversational
