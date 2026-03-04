@@ -859,37 +859,31 @@ def generate_styled_documentation(file_contents: dict, context: str, doc_style: 
     
     # Phi-3 Only mode - use local Phi-3 model without Gemini
     if generation_mode == "phi3_only":
-        print(f"🧠 PHI-3 ONLY MODE: Using local Microsoft Phi-3 model (no cloud API)")
+        print(f"🧠 PHI-3 ONLY MODE: Using local template-based analysis (no cloud API)")
         lazy_load_advanced_system()
         
         if doc_generator:
             try:
-                combined_content = ""
-                for file_path, content in file_contents.items():
-                    combined_content += f"# File: {file_path}\n{content[:3000]}\n\n"
+                file_list = list(file_contents.keys())
+                print(f"📄 Phi-3 analyzing {len(file_list)} files: {file_list[:5]}{'...' if len(file_list) > 5 else ''}")
                 
-                # Generate with Phi-3 only
-                phi3_prompt = f"""Generate comprehensive technical documentation for this codebase.
-
-Context: {context or 'Technical documentation'}
-Style: {doc_style}
-
-Code to document:
-{combined_content[:12000]}
-
-Generate detailed documentation including:
-1. Overview and purpose
-2. All classes and functions with descriptions
-3. Parameters and return values
-4. Usage examples
-5. Configuration options
-"""
-                result = doc_generator.generate_documentation(phi3_prompt)
+                # Pass file_contents directly for proper code analysis
+                # skip_gemini=True ensures NO Gemini API calls
+                # file_contents_dict bypasses MultiInputHandler to use parsed files directly
+                result = doc_generator.generate_documentation(
+                    input_data='',  # Not used when file_contents_dict provided
+                    context=context or 'Technical documentation',
+                    doc_style=doc_style,
+                    skip_gemini=True,
+                    file_contents_dict=file_contents  # Pass actual code files
+                )
                 if result and len(result) > 100:
-                    print(f"✅ PHI-3 ONLY: Generated {len(result)} characters")
+                    print(f"✅ PHI-3 ONLY (no Gemini): Generated {len(result)} characters")
                     return result
             except Exception as e:
                 print(f"⚠️ Phi-3 only mode failed: {e}")
+                import traceback
+                traceback.print_exc()
         
         # Fallback to basic analysis if Phi-3 fails
         print("⚠️ Phi-3 not available, using basic analysis")
@@ -935,10 +929,16 @@ Generate detailed documentation including:
             
             # Build prompt with code context
             combined_content = ""
+            file_list = list(file_contents.keys())  # Track actual files
             # Include ALL files for comprehensive documentation generation
             for file_path, content in file_contents.items():
                 # Include substantial content from each file (up to 5000 chars for better context)
                 combined_content += f"# File: {file_path}\n{content[:5000]}\n\n"
+            
+            print(f"📄 Files to document: {file_list[:10]}{'...' if len(file_list) > 10 else ''}")
+            
+            # Build strict file listing for anti-hallucination
+            files_in_repo = "\n".join([f"- {f}" for f in file_list])
             
             # Skip RAG enhancement for FAST documentation generation
             rag_context_section = ""
@@ -950,15 +950,24 @@ Generate detailed documentation including:
             
             # Build style-specific prompts
             if doc_style == 'technical_comprehensive':
-                prompt = f"""You are writing the ULTIMATE technical reference documentation - like official Python docs, Django docs, or React documentation. Write ACTUAL CONTENT with full paragraphs, not just section headings.
+                prompt = f"""You are writing technical reference documentation for the repository below.
 
-CRITICAL: Write REAL DOCUMENTATION CONTENT. Each section must have multiple paragraphs of actual text explaining concepts, not just bullet points or headings. This should read like professional documentation from major open source projects.
+CRITICAL ANTI-HALLUCINATION RULES - YOU MUST FOLLOW THESE:
+1. Document ONLY the files, classes, and functions that appear in the SOURCE CODE section below
+2. DO NOT invent or imagine any code, files, features, or functionality
+3. DO NOT make up API endpoints, database tables, or external services
+4. Every single thing you document MUST be directly visible in the source code provided
+5. If something is unclear, describe what you see rather than guessing
+6. NEVER describe generic functionality - describe THIS SPECIFIC codebase only
+
+FILES IN THIS REPOSITORY (the ONLY files that exist):
+{files_in_repo}
 
 Context: {context or 'Technical documentation'}
 {rag_context_section}
 Repository: {os.path.basename(repo_path) if repo_path else 'repository'} ({len(file_contents)} files, {sum(len(c.split('\\n')) for c in file_contents.values())} lines)
 
-Source Code to Document:
+SOURCE CODE TO DOCUMENT (document ONLY what appears here):
 {combined_content[:18000]}
 
 Write comprehensive technical documentation following this structure. FOR EACH SECTION, write several paragraphs of detailed explanatory text:
@@ -1018,25 +1027,30 @@ Document common issues with:
 - Step-by-step solution
 - Prevention tips
 
-WRITING STYLE: Write in clear, professional prose. Each section should have substantial paragraphs of text, not just lists. Explain the "why" behind things, not just the "what". Be thorough and assume the reader wants to deeply understand the system."""
+WRITING STYLE: Write in clear, professional prose. Each section should have substantial paragraphs of text, not just lists. Explain the "why" behind things, not just the "what". Be thorough and assume the reader wants to deeply understand the system.
+
+REMEMBER: Only document what is ACTUALLY in the source code above. Do not hallucinate or invent."""
             
             elif doc_style == 'user_guide':
-                prompt = f"""You are writing a BEGINNER-FRIENDLY user guide that even someone new to programming can understand. Write in simple, clear language with lots of visual diagrams and step-by-step examples.
+                prompt = f"""You are writing a BEGINNER-FRIENDLY user guide for the code below.
 
-CRITICAL: 
-1. Use SIMPLE language - explain technical terms when you use them
-2. Include MULTIPLE Mermaid diagrams showing how things flow
-3. Write ACTUAL explanatory paragraphs, not just bullet lists
-4. Include working code examples with line-by-line explanations
+CRITICAL ANTI-HALLUCINATION RULES:
+1. ONLY describe features and functionality visible in the SOURCE CODE below
+2. DO NOT invent or imagine any files, classes, or features
+3. Every feature you mention MUST be in the source code provided
+4. If unsure, describe what you see rather than guessing
+
+FILES IN THIS REPOSITORY (the ONLY files that exist):
+{files_in_repo}
 
 Context: {context or 'User documentation'}
 {rag_context_section}
 Repository: {os.path.basename(repo_path) if repo_path else 'repository'} ({len(file_contents)} files)
 
-Source Code to Document:
+SOURCE CODE TO DOCUMENT:
 {combined_content[:18000]}
 
-Write a friendly, accessible user guide:
+Write a friendly, accessible user guide based ONLY on the code above:
 
 # Welcome to [Project Name]
 
@@ -1113,19 +1127,29 @@ For each common problem:
 
 A simple summary of the most important commands and options.
 
-WRITING STYLE: Write like you're teaching a friend. Use "you" and "your". Explain jargon. Include lots of examples. Make it feel approachable and not intimidating."""
+WRITING STYLE: Write like you're teaching a friend. Make it approachable.
+
+REMEMBER: Only document what is ACTUALLY in the source code above. Do not hallucinate."""
             
             else:  # opensource style
-                prompt = f"""You are writing an OPEN SOURCE contribution guide focused on: how to troubleshoot issues, how to contribute, and where the project needs more expertise/help.
+                prompt = f"""You are writing an OPEN SOURCE contribution guide for the code below.
+
+CRITICAL ANTI-HALLUCINATION RULES:
+1. ONLY describe files, classes, and functions visible in the SOURCE CODE below
+2. DO NOT invent or imagine any features or functionality
+3. Every file you mention MUST exist in the source code provided
+
+FILES IN THIS REPOSITORY (the ONLY files that exist):
+{files_in_repo}
 
 Context: {context}
 {rag_context_section}
 Repository: {os.path.basename(repo_path) if repo_path else 'repository'}
 
-Source Code:
+SOURCE CODE TO DOCUMENT:
 {combined_content[:18000]}
 
-Write a contributor-focused README:
+Write a contributor-focused README based ONLY on the code above:
 
 # Project Name
 
@@ -1314,48 +1338,36 @@ KEEP IT CONCISE but complete. This is for developers who want to contribute or d
                 gemini = GeminiContextEnhancer()
                 if gemini.available:
                     combined_content = ""
+                    file_list = list(file_contents.keys())
                     for file_path, content in file_contents.items():
                         combined_content += f"# File: {file_path}\n{content[:5000]}\n\n"
                     
-                    prompt = f"""You are writing technical reference documentation. Write ACTUAL CONTENT with full paragraphs, not just section headings or bullet lists.
+                    files_in_repo = "\n".join([f"- {f}" for f in file_list])
+                    
+                    prompt = f"""You are writing technical reference documentation for the code below.
+
+CRITICAL ANTI-HALLUCINATION RULES:
+1. Document ONLY files, classes, and functions visible in the SOURCE CODE below
+2. DO NOT invent or imagine any features or functionality
+3. Every thing you mention MUST be in the source code provided
+
+FILES IN THIS REPOSITORY (the ONLY files that exist):
+{files_in_repo}
 
 Context: {context or 'Technical documentation'}
 
 Repository: {os.path.basename(repo_path) if repo_path else 'repository'} ({len(file_contents)} files, {sum(len(c.split('\\n')) for c in file_contents.values())} lines)
 
-Source Code:
+SOURCE CODE TO DOCUMENT:
 {combined_content[:18000]}
 
-Write comprehensive documentation with REAL CONTENT (paragraphs of explanatory text):
+Write documentation ONLY about the code above. Include:
+- Introduction (what this code actually does)
+- Architecture (based on actual files and classes)
+- API Reference (ONLY functions visible in code)
+- Usage examples (based on actual code patterns)
 
-# Technical Documentation
-
-## Introduction
-Write 2-3 paragraphs explaining what this project does, why it exists, and who should use it.
-
-## Architecture Overview  
-Write detailed paragraphs explaining how the system works, component interactions, and design decisions.
-
-## Installation
-Step-by-step installation with explanations of each command.
-
-## API Reference
-For each class and function, write:
-- Description paragraph
-- Function signature
-- Parameter explanations
-- Usage example with code
-
-## Usage Examples
-Write complete tutorials with code examples and explanations.
-
-## Configuration
-Document all options with descriptions and examples.
-
-## Troubleshooting
-Common issues with solutions.
-
-Write substantial paragraphs for each section, not just lists or headings."""
+REMEMBER: Do not hallucinate or invent anything not in the source code."""
                     
                     response = gemini.client.models.generate_content(
                         model=gemini.model_name,

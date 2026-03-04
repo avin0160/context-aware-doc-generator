@@ -148,14 +148,9 @@ class CodeSearchNetEnhancedAnalyzer:
             except Exception as e:
                 print(f"⚠️  Could not initialize Phi-3: {e}")
         
-        # Initialize documentation validator
+        # Initialize documentation validator (disabled - Sphinx compliance removed)
         self.doc_evaluator = None
-        if METRICS_AVAILABLE:
-            try:
-                self.doc_evaluator = DocumentationEvaluator(max_tokens=512)
-                print("✅ Sphinx compliance validator initialized")
-            except Exception as e:
-                print(f"⚠️  Could not initialize validator: {e}")
+        # METRICS_AVAILABLE validator removed for faster startup
         
         # Load documentation patterns
         if ADVANCED_FEATURES:
@@ -1160,14 +1155,9 @@ class DocumentationGenerator:
         # Expose phi3_generator for direct access
         self.phi3_generator = self.analyzer.phi3_generator if hasattr(self.analyzer, 'phi3_generator') else None
         
-        # Initialize documentation validator
+        # Initialize documentation validator (disabled - Sphinx compliance removed)
         self.doc_evaluator = None
-        if METRICS_AVAILABLE:
-            try:
-                self.doc_evaluator = DocumentationEvaluator(max_tokens=512)
-                print("✅ DocumentationGenerator: Sphinx compliance validator initialized")
-            except Exception as e:
-                print(f"⚠️  DocumentationGenerator: Could not initialize validator: {e}")
+        # METRICS_AVAILABLE validator removed for faster startup
     
     def _infer_project_name(self, provided_name: str, analysis: Dict[str, Any], context: str) -> str:
         """Intelligently infer project name avoiding generic temp names"""
@@ -1278,14 +1268,33 @@ class DocumentationGenerator:
         return f"Handle {func_name.replace('_', ' ')} operations"
     
     def generate_documentation(self, input_data: str, context: str, doc_style: str, 
-                             input_type: str = 'auto', repo_name: str = '', temperature: float = 0.3) -> str:
-        """Generate comprehensive documentation"""
+                             input_type: str = 'auto', repo_name: str = '', temperature: float = 0.3,
+                             skip_gemini: bool = False, file_contents_dict: dict = None) -> str:
+        """Generate comprehensive documentation
+        
+        Args:
+            input_data: Source code string, file path, or directory path
+            context: Context/description for documentation
+            doc_style: Documentation style ('sphinx', 'technical_comprehensive', 'opensource')
+            input_type: Type of input ('auto', 'code', 'path', 'directory')
+            repo_name: Optional repository name
+            temperature: Generation temperature (for future use)
+            skip_gemini: If True, skip Gemini AI and use template-based generation only.
+                        Use this for true 'phi3_only' local mode.
+            file_contents_dict: Optional dict of {filepath: content} to use directly,
+                               bypassing MultiInputHandler. Use for phi3_only mode.
+        """
         
         # Temperature is passed but not used for Phi-3 (fixed at 0.3 for consistency)
         # If needed in future, temperature can be used for Gemini enhancement
+        self._skip_gemini = skip_gemini  # Store for use in style generators
         
-        # Process input
-        file_contents = MultiInputHandler.process_input(input_data, input_type)
+        # Process input - use provided dict if available (phi3_only mode)
+        if file_contents_dict and isinstance(file_contents_dict, dict) and len(file_contents_dict) > 0:
+            file_contents = file_contents_dict
+            print(f"📁 Using direct file contents: {len(file_contents)} files")
+        else:
+            file_contents = MultiInputHandler.process_input(input_data, input_type)
         
         if not file_contents:
             raise ValueError("No Python files found in input")
@@ -1297,7 +1306,7 @@ class DocumentationGenerator:
         if doc_style == 'sphinx':
             documentation = self._generate_sphinx_style(analysis, context, repo_name)
         elif doc_style in ['technical_comprehensive', 'technical', 'comprehensive']:
-            documentation = self._generate_technical_comprehensive_style(analysis, context, repo_name)
+            documentation = self._generate_technical_comprehensive_style(analysis, context, repo_name, skip_gemini=skip_gemini)
         elif doc_style == 'opensource':
             documentation = self._generate_opensource_style(analysis, context, repo_name)
         else:
@@ -3224,8 +3233,11 @@ Config File  ←──┐
 """
         return examples
     
-    def _generate_technical_comprehensive_style(self, analysis: Dict[str, Any], context: str, repo_name: str) -> str:
+    def _generate_technical_comprehensive_style(self, analysis: Dict[str, Any], context: str, repo_name: str, skip_gemini: bool = False) -> str:
         """Technical comprehensive style - Long-form intelligent documentation with overall idea focus
+        
+        Args:
+            skip_gemini: If True, skip Gemini and use template-based generation.
         
         Provides extensive documentation focusing on:
         1. Overall project concept and purpose (big picture)
@@ -3240,7 +3252,8 @@ Config File  ←──┐
         project_type = analysis['project_type'].replace('_', ' ').title()
         
         # TRY GEMINI HUMAN-LIKE MODE FIRST for natural, extensive documentation
-        if self.phi3_generator and hasattr(self.phi3_generator, 'gemini_enhancer'):
+        # Skip if skip_gemini is True (for phi3_only mode)
+        if not skip_gemini and self.phi3_generator and hasattr(self.phi3_generator, 'gemini_enhancer'):
             gemini = self.phi3_generator.gemini_enhancer
             if gemini and gemini.available:
                 print("🚀 Using Gemini Human-Like Mode for Technical Comprehensive documentation...")
@@ -3699,9 +3712,9 @@ For further information, consult the inline code documentation and comments with
             purpose_parts.append(f"**OBSERVED:** An interactive real-time application built with Pygame. Contains {total_funcs} functions implementing rendering ({has_rendering}), collision detection ({has_collision}), and frame-based execution.")
             purpose_parts.append(f"**EXECUTION MODEL:** Frame-driven continuous loop with event polling, not batch processing or library-style invocation.")
             
-            # GEMINI VALIDATION: Enhance with whole-codebase context
+            # GEMINI VALIDATION: Enhance with whole-codebase context (skip if _skip_gemini is True)
             phi3_purpose = " ".join(purpose_parts)
-            if self.phi3_generator and hasattr(self.phi3_generator, 'gemini_enhancer'):
+            if not getattr(self, '_skip_gemini', False) and self.phi3_generator and hasattr(self.phi3_generator, 'gemini_enhancer'):
                 gemini = self.phi3_generator.gemini_enhancer
                 if gemini and gemini.available and self.phi3_generator.project_context:
                     enhanced_purpose = gemini.validate_project_classification(
@@ -3732,8 +3745,8 @@ For further information, consult the inline code documentation and comments with
         
         phi3_purpose = " ".join(purpose_parts)
         
-        # GEMINI VALIDATION for all project types
-        if self.phi3_generator and hasattr(self.phi3_generator, 'gemini_enhancer'):
+        # GEMINI VALIDATION for all project types (skip if _skip_gemini is True)
+        if not getattr(self, '_skip_gemini', False) and self.phi3_generator and hasattr(self.phi3_generator, 'gemini_enhancer'):
             gemini = self.phi3_generator.gemini_enhancer
             if gemini and gemini.available and self.phi3_generator.project_context:
                 enhanced_purpose = gemini.validate_project_classification(
@@ -3877,7 +3890,8 @@ For further information, consult the inline code documentation and comments with
         doc += f"```\n\n"
         
         # Try to get comprehensive documentation from Phi-3
-        if self.phi3_generator is not None:
+        # SKIP if _skip_gemini is True (phi3_only mode wants FAST template-based output, not slow model inference)
+        if not getattr(self, '_skip_gemini', False) and self.phi3_generator is not None:
             try:
                 # Build code snippet
                 function_code = f"def {func.name}({args_str}):\n"
