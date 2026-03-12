@@ -3507,6 +3507,7 @@ async def generate_docs(
                 print("\n🔹 REAL DOCUMENTATION QUALITY METRICS:")
                 real_metrics = None
                 try:
+                    global evaluate_documentation_quality
                     if evaluate_documentation_quality is None:
                         from real_quality_metrics import evaluate_documentation_quality as real_func
                         evaluate_documentation_quality = real_func
